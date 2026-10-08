@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.5.35"
+VERSION = "2.5.36"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -666,7 +666,7 @@ def _restore_vp_originals(orig_hex, orig_grad_top, orig_grad_bot):
         rt.execute("colorMan.repaintUI #repaintAll")
         rt.execute("max views redraw")
     except Exception as e:
-        print(f"[Pipe3D Restore] {e}")
+        print(f"[STM Restore] {e}")
 
 def _apply_vp_color(hex_color):
     """Aplica un color al viewport background via MAXScript.
@@ -691,7 +691,7 @@ def _apply_vp_color(hex_color):
         rt.execute("colorMan.repaintUI #repaintAll")
         rt.execute("max views redraw")
     except Exception as e:
-        print(f"[Pipe3D VP Color] {e}")
+        print(f"[STM VP Color] {e}")
 
 
 class ViewportColorButton(QtWidgets.QPushButton):
@@ -1037,7 +1037,7 @@ def capture_viewport_to_file(out_path):
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
-class Pipe3DShotManager(QtWidgets.QWidget):
+class StudioToolbar(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.state = load_state()
@@ -1052,11 +1052,12 @@ class Pipe3DShotManager(QtWidgets.QWidget):
         self.sync_timer.timeout.connect(self._master_sync)
         self.sync_timer.start(500)
 
-        rt.Pipe3D_GlobalRefresh = self._get_pipeline_from_path
-        rt.callbacks.removeScripts(id=rt.Name("Pipe3DSync"))
+        rt.STM_GlobalRefresh = self._get_pipeline_from_path
+        rt.callbacks.removeScripts(id=rt.Name("Pipe3DSync"))   # legacy id (pre-2.5.36)
+        rt.callbacks.removeScripts(id=rt.Name("STM_Sync"))
         rt.callbacks.addScript(rt.Name("filePostOpen"),
-            "if Pipe3D_GlobalRefresh != undefined do Pipe3D_GlobalRefresh()",
-            id=rt.Name("Pipe3DSync"))
+            "if STM_GlobalRefresh != undefined do STM_GlobalRefresh()",
+            id=rt.Name("STM_Sync"))
         # Sync res/film immediately, populate pipeline after short delay
         QtCore.QTimer.singleShot(100, self._master_sync)
         QtCore.QTimer.singleShot(300, self._populate_projects)
@@ -1113,7 +1114,7 @@ class Pipe3DShotManager(QtWidgets.QWidget):
         self.btn_rem_back.setToolTip("Remove Background\nRemoves/hides the environment background from the scene")
         self.btn_textures.setToolTip("Show Textures\nToggles texture display in the viewport (on/off)")
         self.btn_bake_cam.setToolTip("Bake Camera\nBakes the active camera animation to an Alembic (.abc) cache")
-        self.btn_library.setToolTip("Studio Library MAX\nOpens the Pipe3D pose/animation library manager")
+        self.btn_library.setToolTip("Studio Library MAX\nOpens the pose/animation library manager")
 
         for b in [self.btn_overscan, self.btn_img_plane, self.btn_rem_back,
                   self.btn_textures, self.btn_bake_cam]:
@@ -1458,7 +1459,7 @@ class Pipe3DShotManager(QtWidgets.QWidget):
         btn_pos = self.btn_tools_menu.mapToGlobal(
             QtCore.QPoint(0, self.btn_tools_menu.height())
         )
-        menu.exec_(btn_pos)
+        menu.exec(btn_pos)
 
     # ── script runner ─────────────────────────────────────────────────────────
     def _run_smart_script(self, path):
@@ -1475,7 +1476,7 @@ class Pipe3DShotManager(QtWidgets.QWidget):
                 ctx["_run"]()
                 self._set_status("Loaded", "#70aa70")
         except Exception as e:
-            self._set_status("Error", "#e06060"); print(f"Pipe3D Error: {e}")
+            self._set_status("Error", "#e06060"); print(f"STM Error: {e}")
 
     def eventFilter(self, obj, event):
         if obj is self.film_spin:
@@ -1730,7 +1731,7 @@ class Pipe3DShotManager(QtWidgets.QWidget):
             self._set_status("GET OK", "#70aa70")
         except Exception as e:
             self._set_status("GET Error", "#e06060")
-            print(f"Pipe3D GET error: {e}")
+            print(f"STM GET error: {e}")
 
     def set_paths_only(self):
         try:
@@ -2118,7 +2119,7 @@ class Pipe3DShotManager(QtWidgets.QWidget):
 
         except Exception as e:
             self._set_status("Snap error", "#e06060")
-            print(f"Pipe3D Snap error: {e}")
+            print(f"STM Snap error: {e}")
 
     def _load_current_max_settings(self):
         """Solo sincroniza res/film/fps/unit — NO toca pipeline."""
@@ -2130,8 +2131,8 @@ class Pipe3DShotManager(QtWidgets.QWidget):
 class PipelineSetupDialog(QtWidgets.QDialog):
     """
     Diálogo de configuración del pipeline.
-    - Guarda config activa en  ~/.pipe3d/pipeline_config.ini
-    - Guarda presets en        ~/.pipe3d/pipeline_presets.json
+    - Guarda config activa en  ~/.studio-toolbar/pipeline_config.ini
+    - Guarda presets en        ~/.studio-toolbar/pipeline_presets.json
     """
 
     PRESETS_PATH = os.path.join(PIPE_DIR, "pipeline_presets.json")
@@ -2744,19 +2745,23 @@ class PipelineSetupDialog(QtWidgets.QDialog):
 
 
 # ── Dock ─────────────────────────────────────────────────────────────────────
-def show_pipe3d_manager():
+def show_studio_toolbar():
     main  = GetQMaxMainWindow()
     title = f"Studio Toolbar for MAX  v{VERSION}"
+    # Cerrar cualquier instancia previa (actual o legacy) para no duplicar el toolbar
     for child in main.findChildren(QtWidgets.QDockWidget):
-        if child.windowTitle().startswith("Pipe3D Shot Manager"): child.close()
+        if (child.objectName() in ("STM_ToolbarDock", "Pipe3DShotManagerDock")
+                or child.windowTitle().startswith(("Studio Toolbar for MAX", "Pipe3D Shot Manager"))):
+            child.close()
+            child.deleteLater()
     dock = QtWidgets.QDockWidget(title, main)
-    dock.setObjectName("Pipe3DShotManagerDock")
+    dock.setObjectName("STM_ToolbarDock")
     dock.setFeatures(
         QtWidgets.QDockWidget.DockWidgetMovable   |
         QtWidgets.QDockWidget.DockWidgetFloatable |
         QtWidgets.QDockWidget.DockWidgetClosable
     )
-    mgr = Pipe3DShotManager(parent=main)
+    mgr = StudioToolbar(parent=main)
     dock.setWidget(mgr)
     # Al cerrar el dock, restaurar colores de viewport originales
     dock.destroyed.connect(lambda: mgr.btn_vp_color._restore_on_close() if hasattr(mgr, "btn_vp_color") else None)
@@ -2796,4 +2801,4 @@ def show_pipe3d_manager():
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    show_pipe3d_manager()
+    show_studio_toolbar()

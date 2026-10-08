@@ -51,13 +51,13 @@ try destroyDialog Quick_Attach catch()
 -- Remove any previous selection callback registered by this script
 callbacks.removeScripts id:#stm_superattach
 
-seq = 300
+STM_SA_seq = 300
 
 -- ------------------------------------------------------------------
 -- Group objects into buckets of up to maxSlots unique materials each.
 -- Returns array of arrays (buckets).
 -- ------------------------------------------------------------------
-fn bucketByMaterial arr maxSlots =
+fn STM_SA_bucketByMaterial arr maxSlots =
 (
 	local buckets    = #()
 	local bucketMats = #()
@@ -95,7 +95,7 @@ fn bucketByMaterial arr maxSlots =
 -- ------------------------------------------------------------------
 -- Move obj to layer by name. Creates the layer if it doesn't exist.
 -- ------------------------------------------------------------------
-fn moveToLayer obj layerName =
+fn STM_SA_moveToLayer obj layerName =
 (
 	local lyr = LayerManager.getLayerFromName layerName
 	if lyr == undefined do lyr = LayerManager.newLayer()
@@ -109,7 +109,7 @@ fn moveToLayer obj layerName =
 -- ------------------------------------------------------------------
 -- Attach one bucket of objects into a single mesh.
 -- ------------------------------------------------------------------
-fn attachBucket arr seqVal baseName srcLayer =
+fn STM_SA_attachBucket arr seqVal baseName srcLayer =
 (
 	if arr.count == 0 do return undefined
 
@@ -182,7 +182,7 @@ fn attachBucket arr seqVal baseName srcLayer =
 
 	-- Layer placement
 	if Quick_Attach.chk_newlayer.checked then
-		moveToLayer b baseName
+		STM_SA_moveToLayer b baseName
 	else if srcLayer != undefined do
 		srcLayer.addNode b
 
@@ -192,7 +192,7 @@ fn attachBucket arr seqVal baseName srcLayer =
 -- ------------------------------------------------------------------
 -- Main attach
 -- ------------------------------------------------------------------
-fn attachAll =
+fn STM_SA_attachAll =
 (
 	if selection.count == 0 do ( messagebox ("Select objects first"); return false )
 
@@ -210,14 +210,14 @@ fn attachAll =
 	case Quick_Attach.attach_methods.state of
 	(
 		1: (
-			local buckets = bucketByMaterial allObjs 1000
+			local buckets = STM_SA_bucketByMaterial allObjs 1000
 			local results = #()
 
 			for b = 1 to buckets.count do
 			(
 				local name = if buckets.count == 1 then baseName \
 				             else (baseName + "_part" + b as string)
-				local res = attachBucket buckets[b] seqVal name srcLayer
+				local res = STM_SA_attachBucket buckets[b] seqVal name srcLayer
 				if res != undefined do append results res
 			)
 
@@ -253,7 +253,7 @@ fn attachAll =
 			(
 				local name = if mtlArr[i] != undefined then mtlArr[i].name \
 				             else (baseName + "_" + i as string)
-				attachBucket ObjByMats[i] seqVal name srcLayer
+				STM_SA_attachBucket ObjByMats[i] seqVal name srcLayer
 			)
 			Quick_Attach.pb1.value = 0
 			messagebox ("Attach done. Created " + ObjByMats.count as string + " objects.")
@@ -287,7 +287,7 @@ rollout Quick_Attach "STM SuperAttach v1.0" width:176 height:530
 
 	on Quick_Attach open do
 	(
-		spn1.value = seq
+		spn1.value = STM_SA_seq
 		-- Register selection-change callback to keep counter live
 		callbacks.addScript #selectionSetChanged \
 			"if (Quick_Attach != undefined) do Quick_Attach.lbl2.caption = (getCurrentSelection()).count as string" \
@@ -303,7 +303,7 @@ rollout Quick_Attach "STM SuperAttach v1.0" width:176 height:530
 
 	on bt_attach pressed do
 	(
-		undo "STM_SuperAttach" on ( attachAll() )
+		undo "STM_SuperAttach" on ( STM_SA_attachAll() )
 		lbl2.caption = (getCurrentSelection()).count as string
 	)
 

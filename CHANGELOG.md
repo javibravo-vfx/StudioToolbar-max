@@ -1,5 +1,14 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.5.36
+- New: **TOOLS ▾** dropdown — lists every `.ms`/`.py` in `tools/` (scanned on open, no code changes needed to add scripts)
+- Fix: re-running the script no longer stacks duplicate toolbars (old dock is now detected and closed)
+- Internal rename `Pipe3D` → `STM`: class `StudioToolbar`, `show_studio_toolbar()`, `STM_GlobalRefresh`, callback id `STM_Sync`, dock objectName `STM_ToolbarDock`
+  - Legacy `Pipe3DSync` callback and `Pipe3DShotManagerDock` are still cleaned up automatically
+  - Note: dock position must be re-arranged once after updating (new objectName)
+- All MAXScript tools use the `STM_` prefix; SuperAttach globals namespaced as `STM_SA_*`
+- `QMenu.exec_()` → `exec()` (PySide6)
+
 ## v2.5.35
 - Viewport snapshot filename components configurable via Setup dialog (checkboxes)
 - Viewport type names cleaned up: `persp_user` → `persp`, etc.

@@ -1,5 +1,5 @@
 -- ============================================================
---  Pipe3D SuperAttach
+--  STM SuperAttach
 --  Version : 01
 --  Author  : javibravovfx
 --  License : MIT
@@ -49,7 +49,7 @@
 try destroyDialog Quick_Attach catch()
 
 -- Remove any previous selection callback registered by this script
-callbacks.removeScripts id:#pipe3d_superattach
+callbacks.removeScripts id:#stm_superattach
 
 seq = 300
 
@@ -266,7 +266,7 @@ fn attachAll =
 -- ------------------------------------------------------------------
 -- UI
 -- ------------------------------------------------------------------
-rollout Quick_Attach "Pipe3D SuperAttach v1.0" width:176 height:530
+rollout Quick_Attach "STM SuperAttach v1.0" width:176 height:530
 (
 	label        'lbl1'            "Selected objects:"          pos:[8,8]     width:160 height:16                                                     align:#left
 	label        'lbl2'            "0"                          pos:[8,24]    width:160 height:16                                                     align:#left
@@ -291,19 +291,19 @@ rollout Quick_Attach "Pipe3D SuperAttach v1.0" width:176 height:530
 		-- Register selection-change callback to keep counter live
 		callbacks.addScript #selectionSetChanged \
 			"if (Quick_Attach != undefined) do Quick_Attach.lbl2.caption = (getCurrentSelection()).count as string" \
-			id:#pipe3d_superattach
+			id:#stm_superattach
 		lbl2.caption = (getCurrentSelection()).count as string
 	)
 
 	on Quick_Attach close do
 	(
 		-- Clean up callback when dialog is closed
-		callbacks.removeScripts id:#pipe3d_superattach
+		callbacks.removeScripts id:#stm_superattach
 	)
 
 	on bt_attach pressed do
 	(
-		undo "Pipe3D_SuperAttach" on ( attachAll() )
+		undo "STM_SuperAttach" on ( attachAll() )
 		lbl2.caption = (getCurrentSelection()).count as string
 	)
 
@@ -314,7 +314,7 @@ rollout Quick_Attach "Pipe3D SuperAttach v1.0" width:176 height:530
 			local b = selection[1]
 			if (SuperClassOf b == GeometryClass) then
 			(
-				undo "Pipe3D_SuperAttach" on
+				undo "STM_SuperAttach" on
 				(
 					if (ClassOf b != Editable_Poly) do convertTo b Editable_Poly
 					modPanel.addModToSelection (Edit_Normals ()) ui:on
@@ -335,7 +335,7 @@ rollout Quick_Attach "Pipe3D SuperAttach v1.0" width:176 height:530
 			local b = selection[1]
 			if (SuperClassOf b == GeometryClass) then
 			(
-				undo "Pipe3D_SuperAttach" on
+				undo "STM_SuperAttach" on
 				(
 					if (ClassOf b != Editable_Poly) do convertTo b Editable_Poly
 					modPanel.addModToSelection (Edit_Normals ()) ui:on

@@ -1,5 +1,5 @@
 /*
-Script Name:    Pipe3D_ShowTextures_v2.0.0.ms
+Script Name:    STM_ShowTextures.ms
 Version:        v2.0.0
 Description:
     Toggle ON/OFF viewport textures para todos los materiales de la escena.
@@ -9,18 +9,18 @@ Description:
 */
 
 -- Inicializar estado solo la primera vez
-if Pipe3D_ShowTextures_State == undefined then
-    global Pipe3D_ShowTextures_State = false
+if STM_ShowTextures_State == undefined then
+    global STM_ShowTextures_State = false
 
 -- Invertir estado
-Pipe3D_ShowTextures_State = not Pipe3D_ShowTextures_State
+STM_ShowTextures_State = not STM_ShowTextures_State
 
 -- -------------------------------------------------------
 -- Devuelve el texmap "prioritario" (diffuse/base color)
 -- segun el tipo de material. Si no encuentra, devuelve
 -- el primer texmap disponible. Si no hay ninguno, undefined.
 -- -------------------------------------------------------
-fn Pipe3D_GetPrimaryTexmap mat =
+fn STM_GetPrimaryTexmap mat =
 (
     local matClass = classof mat
     local tex = undefined
@@ -85,14 +85,14 @@ fn Pipe3D_GetPrimaryTexmap mat =
 -- -------------------------------------------------------
 -- Procesa un material: muestra su texmap prioritario
 -- -------------------------------------------------------
-fn Pipe3D_ProcessMaterial mat newState =
+fn STM_ProcessMaterial mat newState =
 (
     if mat == undefined then return()
     if classof mat == Multimaterial then (
         for i = 1 to mat.numsubs do
-            Pipe3D_ProcessMaterial mat[i] newState
+            STM_ProcessMaterial mat[i] newState
     ) else (
-        local tex = Pipe3D_GetPrimaryTexmap mat
+        local tex = STM_GetPrimaryTexmap mat
         if tex != undefined then
             showTexturemap mat tex newState
         else
@@ -106,7 +106,7 @@ fn Pipe3D_ProcessMaterial mat newState =
 setWaitCursor()
 for obj in objects do (
     if obj.material != undefined then
-        Pipe3D_ProcessMaterial obj.material Pipe3D_ShowTextures_State
+        STM_ProcessMaterial obj.material STM_ShowTextures_State
 )
 redrawViews()
 setArrowCursor()

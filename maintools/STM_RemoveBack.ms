@@ -1,5 +1,5 @@
 /*
-Script Name:    stm_RemoveBack.ms
+Script Name:    STM_RemoveBack.ms
 Version:        v2.0.0
 Description:
     Remueve los bitmaps de background de todos los viewports
@@ -7,7 +7,7 @@ Description:
     Llamado via rt.fileIn() desde StudioToolbar-max.
 */
 
-fn Pipe3D_RemoveBack =
+fn STM_RemoveBack =
 (
     local originalViewport = viewport.activeViewport
 
@@ -23,4 +23,4 @@ fn Pipe3D_RemoveBack =
     redrawViews()
 )
 
-Pipe3D_RemoveBack()
+STM_RemoveBack()

@@ -1,3 +1,14 @@
+/*
+Script Name:    STM_BakeAlembic.ms
+Version:        v1.0.0
+Description:
+    Bakes an Alembic camera object into a native Free Camera
+    with keyframed transform and FOV over the full animation range.
+    Select the Alembic object first, then run.
+    Llamado via rt.fileIn() desde StudioToolbar-max.
+*/
+
+fn STM_BakeAlembic =
 (
     if selection.count != 1 then
     (
@@ -29,3 +40,5 @@
     messageBox "Camera created with baked TRANSFORM + FOV keys"
     select cam
 )
+
+STM_BakeAlembic()

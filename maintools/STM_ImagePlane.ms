@@ -1,5 +1,5 @@
 -- ============================================================
---  3dsMax-ImagePlane
+--  STM ImagePlane
 --  Version : 02
 --  Author  : javibravovfx
 --  License : MIT

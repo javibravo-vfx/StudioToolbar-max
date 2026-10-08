@@ -1,10 +1,11 @@
 /*
-    Overscan Tool (Standalone)
-    Extracted from: Pipe3D Shot Manager v6.7
-    Author: javibravovfx
-
+Script Name:    STM_Overscan.ms
+Version:        v1.0.0
+Description:
+    Overscan tool — adds overscan pixels around the current render resolution.
     Inspired by Overscan 0.26 by Martin Breidt (martin@breidt.net)
     http://scripts.breidt.net
+    Llamado via rt.fileIn() desde StudioToolbar-max.
 */
 
 try(destroyDialog _roOverScan)catch()
@@ -76,7 +77,7 @@ rollout _roOverScan "STM Overscan" (
                 )
                 
                 local factor = xres as float / oldResX
-                undo "Pipe3D Overscan" on (
+                undo "STM Overscan" on (
                     if isProperty targetCam #focalLength then targetCam.focalLength *= factor
                     else if isProperty targetCam #fov do targetCam.fov = 2 * atan(tan(targetCam.fov/2.0) * factor)
                     if isProperty targetCam #film_width_mm then targetCam.film_width_mm *= factor

@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.5.38"
+VERSION = "2.5.39"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -41,6 +41,9 @@ PATH_TEXTURES    = r"T:\.studio-toolbar\max\maintools\STM_ShowTextures.ms"
 PATH_BAKE_CAM    = r"T:\.studio-toolbar\max\maintools\STM_BakeAlembic.ms"
 PATH_LIBRARY     = r"T:\.studio-toolbar\max\maintools\STM_StudioLibraryMAX.py"
 PATH_TOOLS_DIR   = r"T:\.studio-toolbar\max\tools"
+
+# Slot de AppData en rootNode donde Set Paths guarda los paths dentro del .max
+STM_APPDATA_PATHS = 731101
 
 # ── Pipeline structure ────────────────────────────────────────────────────────
 # Root drive or UNC path where all project folders live
@@ -1060,7 +1063,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.sync_timer.timeout.connect(self._master_sync)
         self.sync_timer.start(500)
 
-        rt.STM_GlobalRefresh = self._get_pipeline_from_path
+        rt.STM_GlobalRefresh = self._on_file_opened
         rt.callbacks.removeScripts(id=rt.Name("Pipe3DSync"))   # legacy id (pre-2.5.36)
         rt.callbacks.removeScripts(id=rt.Name("STM_Sync"))
         rt.callbacks.addScript(rt.Name("filePostOpen"),
@@ -1816,6 +1819,19 @@ class StudioToolbar(QtWidgets.QWidget):
             self._set_status("GET Error", "#e06060")
             print(f"STM GET error: {e}")
 
+    # ── project paths ─────────────────────────────────────────────────────────
+    # Max NO guarda los Project Paths dentro del .max (son de la sesión / .mxp).
+    # Set Paths los guarda además en AppData del rootNode, y al abrir el archivo
+    # (_on_file_opened) se vuelven a aplicar. Solo afecta archivos donde se usó Set Paths.
+    _PATH_KEYS = ("scene", "image", "preview", "renderoutput", "import", "export")
+
+    @staticmethod
+    def _apply_path_dirs(dirs):
+        for key in StudioToolbar._PATH_KEYS:
+            if key in dirs:
+                try: rt.pathConfig.setDir(rt.name(key), dirs[key])
+                except Exception as e: print(f"[STM Paths] {key}: {e}")
+
     def set_paths_only(self):
         try:
             project = self.project_cb.currentText()
@@ -1828,24 +1844,52 @@ class StudioToolbar(QtWidgets.QWidget):
             sub_p   = cfg["sub_projects"]
             sub_r   = cfg["sub_review"]
             sub_pub = cfg["sub_publish"]
-            rel_scenes = f"..\\{seq}\\{shot}\\3D\\{task}\\{sub_p}"
-            rt.pathConfig.setDir(rt.name('scene'),        rel_scenes)
-            rt.pathConfig.setDir(rt.name('image'),        rel_scenes + "\\textures")
-            rt.pathConfig.setDir(rt.name('preview'),      f"..\\{seq}\\{shot}\\3D\\{task}\\{sub_r}")
-            rt.pathConfig.setDir(rt.name('renderoutput'), f"..\\{seq}\\{shot}\\3D\\{task}\\{sub_pub}")
-            # import path — buscar carpeta "import" en los subfolders del task
-            task_subs = get_task_projects_subs(task)
-            if "import" in task_subs:
-                import_rel = f"..\\{seq}\\{shot}\\3D\\{task}\\{sub_p}\\import"
-                try: rt.pathConfig.setDir(rt.name('import'), import_rel)
-                except: pass
-            # export path → carpeta publish (igual que renderoutput)
-            try: rt.pathConfig.setDir(rt.name('export'), f"..\\{seq}\\{shot}\\3D\\{task}\\{sub_pub}")
-            except: pass
+            task_rel = f"..\\{seq}\\{shot}\\3D\\{task}"
+            dirs = {
+                "scene":        f"{task_rel}\\{sub_p}",
+                "image":        f"{task_rel}\\{sub_p}\\textures",
+                "preview":      f"{task_rel}\\{sub_r}",
+                "renderoutput": f"{task_rel}\\{sub_pub}",
+                "export":       f"{task_rel}\\{sub_pub}",   # export → publish (igual que render)
+            }
+            # import path — solo si la task tiene carpeta "import"
+            if "import" in get_task_projects_subs(task):
+                dirs["import"] = f"{task_rel}\\{sub_p}\\import"
+            self._apply_path_dirs(dirs)
+
+            # Guardar dentro del .max para restaurarlos al reabrir el archivo
+            project_folder = os.path.join(get_pipeline_base(), f"{cfg['project_prefix']}{project}", "3D")
+            try:
+                rt.setAppData(rt.rootNode, STM_APPDATA_PATHS,
+                              json.dumps({"project_folder": project_folder, "dirs": dirs}))
+            except Exception as e:
+                print(f"[STM Paths] store in file: {e}")
+
             save_state({"project": project, "sequence": seq, "shot": shot, "task": task})
             self._set_status("Paths set", "#70aa70")
         except Exception as e:
             self._set_status("PATH Error", "#e06060"); print(e)
+
+    def _restore_paths_from_file(self):
+        """Si el .max abierto tiene paths guardados por Set Paths, los re-aplica."""
+        try:
+            raw = rt.getAppData(rt.rootNode, STM_APPDATA_PATHS)
+            if not raw: return False
+            data = json.loads(str(raw))
+            proj = data.get("project_folder", "")
+            if proj and os.path.isdir(proj):
+                rt.pathConfig.setCurrentProjectFolder(proj)
+            self._apply_path_dirs(data.get("dirs", {}))
+            return True
+        except Exception as e:
+            print(f"[STM Paths] restore: {e}")
+            return False
+
+    def _on_file_opened(self):
+        """Callback filePostOpen: GET de dropdowns + restaurar paths guardados en el archivo."""
+        self._get_pipeline_from_path()
+        if self._restore_paths_from_file():
+            self._set_status("Paths restored", "#70aa70")
 
     def set_save_only(self):
         try:
@@ -2067,7 +2111,10 @@ class StudioToolbar(QtWidgets.QWidget):
             except: pass
             try: rt.pathConfig.setDir(rt.name('export'), ".\\export")
             except: pass
-            rt.rendOutputFilename = ""; rt.rendSaveFile = False; self._set_status("Reset")
+            rt.rendOutputFilename = ""; rt.rendSaveFile = False
+            try: rt.deleteAppData(rt.rootNode, STM_APPDATA_PATHS)   # el archivo deja de restaurar paths
+            except: pass
+            self._set_status("Reset")
 
     def _write_res_to_max(self):
         rt.renderWidth, rt.renderHeight = self.res_w.value(), self.res_h.value()

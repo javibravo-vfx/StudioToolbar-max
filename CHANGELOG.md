@@ -1,5 +1,12 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.5.39
+- **Project paths travel with the .max file.** 3ds Max does not store Project Paths in the scene, so after a reset, reopening a file showed whatever paths the session had.
+  - Set Paths now also stores the paths (and the project folder) in the scene's AppData
+  - On file open, after GET, stored paths are re-applied automatically → status `Paths restored`
+  - Only files where Set Paths was used (and then saved) are affected
+  - Toolbar Reset also removes the stored paths from the current scene
+
 ## v2.5.38
 - **Set Render** now also points renderer-owned outputs to the publish folder (only outputs already enabled — nothing is switched on):
   - Max Render Elements → `<version>_<Element><sep>.exr`

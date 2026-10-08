@@ -1,5 +1,9 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.5.41
+- Fix: stored paths were skipped when the task couldn't be read from the file location (`3D` vs `3d`, or file not inside a task folder). Comparison is now case-insensitive and the task is only required when the file sits inside a task folder; project/seq/shot must always match
+- GET also reads the task when the folder is `3d` (lowercase)
+
 ## v2.5.40
 - Stored project paths are only restored if the file is still in the same project / sequence / shot / task they were saved for. A file copied or saved-as into another shot no longer gets the old shot's paths → status `Paths skipped` (reason printed to the Listener)
 - Stamp now records project/seq/shot/task; v2.5.39 stamps are still understood

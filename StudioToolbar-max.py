@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.5.40"
+VERSION = "2.5.41"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -1804,7 +1804,8 @@ class StudioToolbar(QtWidgets.QWidget):
             "project": parts[idx][len(prefix):],
             "seq":     parts[idx + 1],
             "shot":    parts[idx + 2],
-            "task":    parts[idx + 4] if len(parts) > idx + 4 and parts[idx + 3] == "3D" else "",
+            # Windows no distingue mayúsculas: "3D" == "3d"
+            "task":    parts[idx + 4] if len(parts) > idx + 4 and parts[idx + 3].lower() == "3d" else "",
         }
 
     def _get_pipeline_from_path(self):
@@ -1896,11 +1897,15 @@ class StudioToolbar(QtWidgets.QWidget):
                 pf_bits = [b for b in data.get("project_folder", "").replace("/", "\\").split("\\") if b]
                 proj = pf_bits[-2] if len(pf_bits) >= 2 else ""      # T:\VFX-MOR\3D → VFX-MOR
                 prefix = _cfg()["project_prefix"]
-                if len(bits) >= 4 and bits[2] == "3D" and proj.startswith(prefix):
+                if len(bits) >= 4 and bits[2].lower() == "3d" and proj.startswith(prefix):
                     stored = {"project": proj[len(prefix):], "seq": bits[0],
                               "shot": bits[1], "task": bits[3]}
             here = self._parse_pipeline_path(rt.maxFilePath) or {}
-            if any(stored.get(k) != here.get(k) for k in ("project", "seq", "shot", "task")):
+            # project/seq/shot tienen que coincidir siempre; el task solo si el archivo
+            # está dentro de una carpeta de task. Comparación sin mayúsculas (Windows).
+            keys = ["project", "seq", "shot"] + (["task"] if here.get("task") else [])
+            same = lambda k: str(stored.get(k) or "").lower() == str(here.get(k) or "").lower()
+            if not here or not all(same(k) for k in keys):
                 print(f"[STM Paths] skipped — saved for {stored}, file is in {here or 'a non-pipeline folder'}")
                 return "skipped"
 

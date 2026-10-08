@@ -1,0 +1,49 @@
+# Changelog — Studio Toolbar for 3ds Max
+
+## v2.5.35
+- Viewport snapshot filename components configurable via Setup dialog (checkboxes)
+- Viewport type names cleaned up: `persp_user` → `persp`, etc.
+- Camera name taken directly from `cam_obj.name` (no type prefix, no coordinates)
+- Status bar shows `Snap OK` instead of full filename
+- Enter key in Setup dialog QLineEdits does `clearFocus()` instead of closing dialog
+- Viewport Snapshot section separated into its own QGroupBox in Setup
+- Optional sub-subfolder field for snapshot destination (e.g. `captures`)
+
+## v2.5.3
+- Fix: `persp_user` mapped to `persp` in viewport type names
+
+## v2.5.2
+- Snapshot filename components: 4 checkboxes in Setup (Max filename, Shot, Task, Camera/view)
+- Live preview label in Setup showing resulting filename
+- Status back to `Snap OK` (no full path)
+
+## v2.5.1
+- Camera name from `cam_obj.name` directly — no type prefix, no `@[coords]`
+
+## v2.5.0
+- Snapshot filename: cut everything after `@`, clean special chars from camera name
+
+## v2.4.9
+- Snapshot filename format: `maxfile_cameraname_vNNN.jpg` (incremental per base+camera)
+
+## v2.4.8
+- Enter key in Setup dialog QLineEdits: `clearFocus()` via eventFilter on all children
+
+## v2.4.4 – v2.4.7
+- Viewport Snapshot section extracted to its own QGroupBox in Setup dialog
+- Optional sub-subfolder field (`thumb_subdir`) — creates folder automatically
+- Fix: Enter in QLineEdit no longer closes Setup dialog
+
+## v2.4.3
+- Note fields narrowed (res: −28px, film: −14px) so Setup button fits in toolbar
+
+## v2.4.2
+- Summary version matching session history
+
+## v2.5.3 (session base)
+- All pipeline config keys (`thumb_subfolder`, `thumb_subdir`, `snap_inc_*`) saved to `pipeline_config.ini`
+- Compatible with named pipeline presets
+
+---
+
+*Earlier history from v1.0 → v2.4.x available on request.*

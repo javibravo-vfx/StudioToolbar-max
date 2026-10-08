@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Studio Toolbar runtime config (machine-specific, not committed)
+pipeline_config.ini
+pipeline_state.ini
+pipeline_presets.json
+
+# Temp / outputs
+*.log

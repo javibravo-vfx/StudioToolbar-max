@@ -40,6 +40,7 @@ PATH_REMOVE_BACK = r"T:\.studio-toolbar\max\maintools\STM_RemoveBack.ms"
 PATH_TEXTURES    = r"T:\.studio-toolbar\max\maintools\STM_ShowTextures.ms"
 PATH_BAKE_CAM    = r"T:\.studio-toolbar\max\maintools\STM_BakeAlembic.ms"
 PATH_LIBRARY     = r"T:\.studio-toolbar\max\maintools\STM_StudioLibraryMAX.py"
+PATH_TOOLS_DIR   = r"T:\.studio-toolbar\max\tools"
 
 # ── Pipeline structure ────────────────────────────────────────────────────────
 # Root drive or UNC path where all project folders live
@@ -1079,10 +1080,25 @@ class Pipe3DShotManager(QtWidgets.QWidget):
         outer.addStretch(1)
 
         # ── SECTION: TOOLS ───────────────────────────────────────────────────
-        # Label "TOOLS" visible antes de los iconos
-        lbl_tools = QtWidgets.QLabel("TOOLS")
-        lbl_tools.setStyleSheet(f"color:{MX_TEXT_DIM}; font-size:{FONT_LABEL}; font-weight:bold; background:transparent;")
-        L.addWidget(lbl_tools)
+        # Botón "TOOLS" que abre un QMenu con los scripts de PATH_TOOLS_DIR
+        self.btn_tools_menu = QtWidgets.QPushButton("TOOLS ▾")
+        self.btn_tools_menu.setObjectName("tools_menu_btn")
+        self.btn_tools_menu.setFixedHeight(16)
+        self.btn_tools_menu.setStyleSheet(f"""
+            QPushButton#tools_menu_btn {{
+                color: {MX_TEXT_DIM}; font-size: {FONT_LABEL}; font-weight: bold;
+                background: transparent; border: none; padding: 0px 2px;
+                text-align: left;
+            }}
+            QPushButton#tools_menu_btn:hover {{
+                color: {MX_TEXT};
+            }}
+            QPushButton#tools_menu_btn:pressed {{
+                color: #c8a84a;
+            }}
+        """)
+        self.btn_tools_menu.clicked.connect(self._open_tools_menu)
+        L.addWidget(self.btn_tools_menu)
         L.addSpacing(4)
 
         self.btn_overscan  = IconToolButton(_svg_overscan,  accent_color=IC_ACCENT)
@@ -1400,6 +1416,49 @@ class Pipe3DShotManager(QtWidgets.QWidget):
             f"color:{color}; font-size:{FONT_LABEL}; min-width:100px; background:transparent;")
         QtCore.QTimer.singleShot(2200, lambda: self.status_lbl.setStyleSheet(
             f"color:{MX_TEXT_DIM}; font-size:{FONT_LABEL}; min-width:100px; background:transparent;"))
+
+    # ── tools dropdown menu ───────────────────────────────────────────────────
+    def _open_tools_menu(self):
+        tools_dir = PATH_TOOLS_DIR
+        menu = QtWidgets.QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: #2d2d2d; color: {MX_TEXT};
+                border: 1px solid #555; font-size: 9pt;
+            }}
+            QMenu::item {{ padding: 5px 18px 5px 10px; }}
+            QMenu::item:selected {{ background-color: #3a3a3a; color: white; }}
+            QMenu::separator {{ height: 1px; background: #444; margin: 2px 0; }}
+        """)
+
+        if not os.path.isdir(tools_dir):
+            act = menu.addAction(f"Folder not found: {tools_dir}")
+            act.setEnabled(False)
+        else:
+            scripts = sorted([
+                f for f in os.listdir(tools_dir)
+                if f.lower().endswith((".ms", ".py")) and not f.startswith("_")
+            ])
+            if not scripts:
+                act = menu.addAction("No scripts found")
+                act.setEnabled(False)
+            else:
+                for fname in scripts:
+                    # STM_CarRig.ms  →  "Car Rig"
+                    label = os.path.splitext(fname)[0]
+                    label = re.sub(r'^STM_', '', label)
+                    label = re.sub(r'([a-z])([A-Z])', r'\1 \2', label)
+                    label = label.replace('_', ' ')
+                    full_path = os.path.join(tools_dir, fname)
+                    act = menu.addAction(label)
+                    act.setData(full_path)
+                    act.triggered.connect(lambda checked, p=full_path: self._run_smart_script(p))
+
+        # Abrir el menú justo debajo del botón
+        btn_pos = self.btn_tools_menu.mapToGlobal(
+            QtCore.QPoint(0, self.btn_tools_menu.height())
+        )
+        menu.exec_(btn_pos)
 
     # ── script runner ─────────────────────────────────────────────────────────
     def _run_smart_script(self, path):

@@ -1,5 +1,10 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.5.40
+- Stored project paths are only restored if the file is still in the same project / sequence / shot / task they were saved for. A file copied or saved-as into another shot no longer gets the old shot's paths → status `Paths skipped` (reason printed to the Listener)
+- Stamp now records project/seq/shot/task; v2.5.39 stamps are still understood
+- GET and the restore check share one path parser (`_parse_pipeline_path`)
+
 ## v2.5.39
 - **Project paths travel with the .max file.** 3ds Max does not store Project Paths in the scene, so after a reset, reopening a file showed whatever paths the session had.
   - Set Paths now also stores the paths (and the project folder) in the scene's AppData

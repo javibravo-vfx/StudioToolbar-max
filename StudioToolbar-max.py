@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.5.39"
+VERSION = "2.5.40"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -1793,19 +1793,26 @@ class StudioToolbar(QtWidgets.QWidget):
         if "task" in self.state and self.task_cb.count() > 0:
             self.task_cb.setCurrentText(self.state["task"])
 
+    @staticmethod
+    def _parse_pipeline_path(folder):
+        """...\\VFX-XXX\\seq\\shot\\3D\\task\\... → dict(project, seq, shot, task) o None."""
+        prefix = _cfg()["project_prefix"]
+        parts  = [p for p in str(folder).replace("/", "\\").split("\\") if p]
+        idx = next((i for i, p in enumerate(parts) if p.startswith(prefix)), None)
+        if idx is None or len(parts) <= idx + 2: return None
+        return {
+            "project": parts[idx][len(prefix):],
+            "seq":     parts[idx + 1],
+            "shot":    parts[idx + 2],
+            "task":    parts[idx + 4] if len(parts) > idx + 4 and parts[idx + 3] == "3D" else "",
+        }
+
     def _get_pipeline_from_path(self):
         """GET: lee rt.maxFilePath y setea los 4 dropdowns."""
         try:
-            cfg        = _cfg()
-            prefix     = cfg["project_prefix"]
-            max_folder = str(rt.maxFilePath)
-            parts      = [p for p in max_folder.split("\\") if p]
-            idx = next((i for i, p in enumerate(parts) if p.startswith(prefix)), None)
-            if idx is None or len(parts) <= idx + 2: return
-            project = parts[idx].replace(prefix, "")
-            seq     = parts[idx + 1]
-            shot    = parts[idx + 2]
-            task    = parts[idx + 4] if len(parts) > idx + 4 and parts[idx + 3] == "3D" else ""
+            info = self._parse_pipeline_path(rt.maxFilePath)
+            if info is None: return
+            project, seq, shot, task = info["project"], info["seq"], info["shot"], info["task"]
             if self.project_cb.findText(project) < 0:
                 self._set_status("Project not listed", "#e06060"); return
             self.project_cb.setCurrentText(project)
@@ -1860,8 +1867,9 @@ class StudioToolbar(QtWidgets.QWidget):
             # Guardar dentro del .max para restaurarlos al reabrir el archivo
             project_folder = os.path.join(get_pipeline_base(), f"{cfg['project_prefix']}{project}", "3D")
             try:
-                rt.setAppData(rt.rootNode, STM_APPDATA_PATHS,
-                              json.dumps({"project_folder": project_folder, "dirs": dirs}))
+                rt.setAppData(rt.rootNode, STM_APPDATA_PATHS, json.dumps({
+                    "project": project, "seq": seq, "shot": shot, "task": task,
+                    "project_folder": project_folder, "dirs": dirs}))
             except Exception as e:
                 print(f"[STM Paths] store in file: {e}")
 
@@ -1871,25 +1879,48 @@ class StudioToolbar(QtWidgets.QWidget):
             self._set_status("PATH Error", "#e06060"); print(e)
 
     def _restore_paths_from_file(self):
-        """Si el .max abierto tiene paths guardados por Set Paths, los re-aplica."""
+        """Si el .max abierto tiene paths guardados por Set Paths, los re-aplica.
+        Solo si el archivo sigue en el mismo project/seq/shot/task donde se guardaron:
+        si se copió o se hizo Save As a otro shot, se ignoran.
+        Devuelve "restored", "skipped" o None (sin paths guardados)."""
         try:
             raw = rt.getAppData(rt.rootNode, STM_APPDATA_PATHS)
-            if not raw: return False
+            if not raw: return None
             data = json.loads(str(raw))
+
+            stored = {k: data.get(k) for k in ("project", "seq", "shot", "task")}
+            if not all(stored.values()):
+                # Marca de v2.5.39 (sin shot/task): deducirlos del path de escena guardado
+                rel = data.get("dirs", {}).get("scene", "")
+                bits = [b for b in rel.split("\\") if b and b != ".."]
+                pf_bits = [b for b in data.get("project_folder", "").replace("/", "\\").split("\\") if b]
+                proj = pf_bits[-2] if len(pf_bits) >= 2 else ""      # T:\VFX-MOR\3D → VFX-MOR
+                prefix = _cfg()["project_prefix"]
+                if len(bits) >= 4 and bits[2] == "3D" and proj.startswith(prefix):
+                    stored = {"project": proj[len(prefix):], "seq": bits[0],
+                              "shot": bits[1], "task": bits[3]}
+            here = self._parse_pipeline_path(rt.maxFilePath) or {}
+            if any(stored.get(k) != here.get(k) for k in ("project", "seq", "shot", "task")):
+                print(f"[STM Paths] skipped — saved for {stored}, file is in {here or 'a non-pipeline folder'}")
+                return "skipped"
+
             proj = data.get("project_folder", "")
             if proj and os.path.isdir(proj):
                 rt.pathConfig.setCurrentProjectFolder(proj)
             self._apply_path_dirs(data.get("dirs", {}))
-            return True
+            return "restored"
         except Exception as e:
             print(f"[STM Paths] restore: {e}")
-            return False
+            return None
 
     def _on_file_opened(self):
         """Callback filePostOpen: GET de dropdowns + restaurar paths guardados en el archivo."""
         self._get_pipeline_from_path()
-        if self._restore_paths_from_file():
+        result = self._restore_paths_from_file()
+        if result == "restored":
             self._set_status("Paths restored", "#70aa70")
+        elif result == "skipped":
+            self._set_status("Paths skipped", "#d4a017")
 
     def set_save_only(self):
         try:

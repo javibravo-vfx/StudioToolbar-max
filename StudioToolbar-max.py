@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.5.36"
+VERSION = "2.5.37"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -132,25 +132,33 @@ PIPELINE_DEFAULTS = {
     "render_sep":         CFG_RENDER_SEP,
 }
 
+_CFG_CACHE = {"mtime": None, "data": None}
+
 def load_pipeline_cfg():
-    """Carga pipeline_config.ini. Si no existe, devuelve los defaults."""
-    if os.path.exists(PIPELINE_CFG):
+    """Carga pipeline_config.ini (merge con defaults). Cacheado: solo relee
+    el archivo si cambió en disco — _master_sync lo consulta cada 500 ms."""
+    try:    mtime = os.path.getmtime(PIPELINE_CFG)
+    except OSError: mtime = None
+    if _CFG_CACHE["data"] is not None and _CFG_CACHE["mtime"] == mtime:
+        return dict(_CFG_CACHE["data"])
+    data = dict(PIPELINE_DEFAULTS)
+    if mtime is not None:
         try:
             with open(PIPELINE_CFG, "r") as f:
-                data = json.load(f)
-            # Merge con defaults para cubrir claves nuevas
-            merged = dict(PIPELINE_DEFAULTS)
-            merged.update(data)
-            return merged
-        except: pass
-    return dict(PIPELINE_DEFAULTS)
+                data.update(json.load(f))
+        except Exception as e:
+            print(f"[STM] pipeline_config read error: {e}")
+    _CFG_CACHE.update(mtime=mtime, data=data)
+    return dict(data)
 
 def save_pipeline_cfg(data):
     try:
         os.makedirs(PIPE_DIR, exist_ok=True)
         with open(PIPELINE_CFG, "w") as f:
             json.dump(data, f, indent=2)
-    except: pass
+    except Exception as e:
+        print(f"[STM] pipeline_config write error: {e}")
+    _CFG_CACHE["data"] = None   # forzar relectura
 
 def _cfg():
     """Shortcut para obtener la config activa."""
@@ -1470,13 +1478,20 @@ class StudioToolbar(QtWidgets.QWidget):
             if ext == ".ms":
                 rt.fileIn(path); self._set_status("Loaded", "#70aa70")
             elif ext == ".py":
-                with open(path, "r") as f: src = f.read()
-                ctx = {"__name__": "__main__", "rt": rt, "os": os}
-                exec("def _run():\n" + "\n".join("    " + l for l in src.splitlines()), ctx)
-                ctx["_run"]()
+                raw = open(path, "rb").read()
+                try:    src = raw.decode("utf-8")
+                except UnicodeDecodeError: src = raw.decode("cp1252")
+                ctx = {"__name__": "__main__", "__file__": path, "rt": rt, "os": os}
+                exec(compile(src, path, "exec"), ctx)
+                # Mantener vivo el namespace: ventanas top-level sin parent
+                # (ej. StudioLibrary: window = ...) se destruirían por GC
+                if not hasattr(self, "_script_ctx"): self._script_ctx = {}
+                self._script_ctx[path] = ctx
                 self._set_status("Loaded", "#70aa70")
         except Exception as e:
-            self._set_status("Error", "#e06060"); print(f"STM Error: {e}")
+            import traceback
+            self._set_status("Error", "#e06060"); print(f"STM Error in {os.path.basename(path)}:")
+            traceback.print_exc()
 
     def eventFilter(self, obj, event):
         if obj is self.film_spin:
@@ -1645,6 +1660,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self._populate_sequences()
 
     def _populate_projects(self):
+        self.project_cb.blockSignals(True)
         self.project_cb.clear()
         cfg          = _cfg()
         prefix       = cfg.get("project_prefix", "VFX-")
@@ -1666,12 +1682,17 @@ class StudioToolbar(QtWidgets.QWidget):
 
         initial = self.state.get("project", current_project_name)
         if initial: self.project_cb.setCurrentText(initial)
+        self.project_cb.blockSignals(False)
+        # Disparar la cadena una sola vez con el proyecto final
+        self._on_project_changed(self.project_cb.currentText())
 
     def _populate_sequences(self):
+        self.sequence_cb.blockSignals(True)
         self.sequence_cb.clear()
         project = self.project_cb.currentText()
         cfg     = _cfg()
-        if not project: return
+        if not project:
+            self.sequence_cb.blockSignals(False); self._populate_shots(); return
         proj_path = os.path.join(get_pipeline_base(), f"{cfg['project_prefix']}{project}")
         exclude   = get_seq_exclude()
         for d in safe_listdir(proj_path):
@@ -1679,13 +1700,17 @@ class StudioToolbar(QtWidgets.QWidget):
             if d and d[0].isdigit() and os.path.isdir(os.path.join(proj_path, d)):
                 self.sequence_cb.addItem(d)
         if "sequence" in self.state: self.sequence_cb.setCurrentText(self.state["sequence"])
+        self.sequence_cb.blockSignals(False)
+        self._populate_shots()
 
     def _populate_shots(self):
+        self.shot_cb.blockSignals(True)
         self.shot_cb.clear()
         project = self.project_cb.currentText()
         seq     = self.sequence_cb.currentText()
         cfg     = _cfg()
-        if not all([project, seq]): return
+        if not all([project, seq]):
+            self.shot_cb.blockSignals(False); self._refresh_tasks(); return
         seq_path = os.path.join(get_pipeline_base(), f"{cfg['project_prefix']}{project}", seq)
         for d in safe_listdir(seq_path):
             if os.path.isdir(os.path.join(seq_path, d)) and d.startswith(f"{project}_"):
@@ -1694,6 +1719,8 @@ class StudioToolbar(QtWidgets.QWidget):
             for i in range(self.shot_cb.count()):
                 if self.state["shot"] == self.shot_cb.itemData(i):
                     self.shot_cb.setCurrentIndex(i); break
+        self.shot_cb.blockSignals(False)
+        self._refresh_tasks()
 
     def _refresh_tasks(self):
         self.task_cb.clear()
@@ -1722,10 +1749,12 @@ class StudioToolbar(QtWidgets.QWidget):
             seq     = parts[idx + 1]
             shot    = parts[idx + 2]
             task    = parts[idx + 4] if len(parts) > idx + 4 and parts[idx + 3] == "3D" else ""
+            if self.project_cb.findText(project) < 0:
+                self._set_status("Project not listed", "#e06060"); return
             self.project_cb.setCurrentText(project)
             self.sequence_cb.setCurrentText(seq)
             for i in range(self.shot_cb.count()):
-                if shot in (self.shot_cb.itemData(i) or ""):
+                if shot == self.shot_cb.itemData(i):
                     self.shot_cb.setCurrentIndex(i); break
             if task: self.task_cb.setCurrentText(task)
             self._set_status("GET OK", "#70aa70")
@@ -1870,10 +1899,10 @@ class StudioToolbar(QtWidgets.QWidget):
         # Calcular nombre versionado: buscar el último _vXXX existente
         task_clean = task.split("_", 1)[-1] if "_" in task else task
         base_name  = f"{shot}_{task_clean}"
-        existing   = [f for f in os.listdir(scene_dir) if f.startswith(base_name) and f.endswith(".max")]
+        rx         = re.compile(r'^' + re.escape(base_name) + r'_v(\d+)\.max$', re.IGNORECASE)
         max_ver    = 0
-        for f in existing:
-            m = re.search(r'_v(\d+)\.max$', f)
+        for f in os.listdir(scene_dir):
+            m = rx.match(f)
             if m: max_ver = max(max_ver, int(m.group(1)))
         next_ver   = max_ver + 1
         filename   = f"{base_name}_v{next_ver:03d}.max"
@@ -2099,11 +2128,10 @@ class StudioToolbar(QtWidgets.QWidget):
             base = "_".join(parts)
 
             # Buscar el mayor vNNN existente para este base en la carpeta destino
-            existing = [f for f in os.listdir(thumb_dir)
-                        if f.startswith(base) and f.endswith(".jpg")] if os.path.isdir(thumb_dir) else []
+            rx    = re.compile(r'^' + re.escape(base) + r'_v(\d+)\.jpg$', re.IGNORECASE)
             max_v = 0
-            for f in existing:
-                m = re.search(r'_v(\d+)\.jpg$', f)
+            for f in (os.listdir(thumb_dir) if os.path.isdir(thumb_dir) else []):
+                m = rx.match(f)
                 if m: max_v = max(max_v, int(m.group(1)))
             version  = max_v + 1
             filename = f"{base}_v{version:03d}.jpg"
@@ -2120,6 +2148,17 @@ class StudioToolbar(QtWidgets.QWidget):
         except Exception as e:
             self._set_status("Snap error", "#e06060")
             print(f"STM Snap error: {e}")
+
+    def cleanup(self):
+        """Detiene el polling y quita el callback de Max. Se llama al cerrar el dock;
+        sin esto el timer seguía corriendo con el toolbar cerrado y el callback
+        filePostOpen apuntaba a un widget muerto."""
+        try: self.sync_timer.stop()
+        except: pass
+        try: rt.callbacks.removeScripts(id=rt.Name("STM_Sync"))
+        except: pass
+        try: rt.STM_GlobalRefresh = None
+        except: pass
 
     def _load_current_max_settings(self):
         """Solo sincroniza res/film/fps/unit — NO toca pipeline."""
@@ -2745,6 +2784,14 @@ class PipelineSetupDialog(QtWidgets.QDialog):
 
 
 # ── Dock ─────────────────────────────────────────────────────────────────────
+class STMDock(QtWidgets.QDockWidget):
+    """Dock que se destruye al cerrarlo (X) y limpia timer/callbacks del toolbar."""
+    def closeEvent(self, event):
+        w = self.widget()
+        if w is not None and hasattr(w, "cleanup"):
+            w.cleanup()
+        super().closeEvent(event)
+
 def show_studio_toolbar():
     main  = GetQMaxMainWindow()
     title = f"Studio Toolbar for MAX  v{VERSION}"
@@ -2752,9 +2799,14 @@ def show_studio_toolbar():
     for child in main.findChildren(QtWidgets.QDockWidget):
         if (child.objectName() in ("STM_ToolbarDock", "Pipe3DShotManagerDock")
                 or child.windowTitle().startswith(("Studio Toolbar for MAX", "Pipe3D Shot Manager"))):
+            w = child.widget()
+            if w is not None and hasattr(w, "cleanup"):
+                try: w.cleanup()
+                except: pass
             child.close()
             child.deleteLater()
-    dock = QtWidgets.QDockWidget(title, main)
+    dock = STMDock(title, main)
+    dock.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
     dock.setObjectName("STM_ToolbarDock")
     dock.setFeatures(
         QtWidgets.QDockWidget.DockWidgetMovable   |
@@ -2763,8 +2815,6 @@ def show_studio_toolbar():
     )
     mgr = StudioToolbar(parent=main)
     dock.setWidget(mgr)
-    # Al cerrar el dock, restaurar colores de viewport originales
-    dock.destroyed.connect(lambda: mgr.btn_vp_color._restore_on_close() if hasattr(mgr, "btn_vp_color") else None)
     mgr.setFixedHeight(TOOL_SZ + 8)
     dock.setStyleSheet(f"""
         QDockWidget {{

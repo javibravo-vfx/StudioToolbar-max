@@ -1,5 +1,14 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.5.37
+- Fix: closing the toolbar (X) now really destroys it — the 500 ms sync timer and the `filePostOpen` callback no longer keep running / pointing at a dead widget
+- Fix: startup no longer fires the project → sequence → shot chain once per list item (could pop "Create 3D folder?" for the wrong project)
+- Fix: snapshot and Save Scene versioning match the exact base name (`cam` no longer counts `cam2` versions)
+- Fix: GET matches the shot exactly and reports `Project not listed` instead of a false `GET OK`
+- Perf: `pipeline_config.ini` cached by file mtime (was parsed from disk twice every 500 ms)
+- `.py` tools run as real modules (`compile` + `exec`) with `__file__`, full tracebacks, UTF-8/cp1252 decoding, and their namespace kept alive
+- Config read/write errors are printed instead of silently ignored
+
 ## v2.5.36
 - New: **TOOLS ▾** dropdown — lists every `.ms`/`.py` in `tools/` (scanned on open, no code changes needed to add scripts)
 - Fix: re-running the script no longer stacks duplicate toolbars (old dock is now detected and closed)

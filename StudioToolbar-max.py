@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.5.37"
+VERSION = "2.5.38"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -1427,9 +1427,77 @@ class StudioToolbar(QtWidgets.QWidget):
             f"color:{MX_TEXT_DIM}; font-size:{FONT_LABEL}; min-width:100px; background:transparent;"))
 
     # ── tools dropdown menu ───────────────────────────────────────────────────
+    @staticmethod
+    def _tool_label(fname):
+        """STM_CarRig.ms → 'Car Rig'"""
+        label = os.path.splitext(fname)[0]
+        label = re.sub(r'^STM_', '', label)
+        label = re.sub(r'([a-z])([A-Z])', r'\1 \2', label)
+        return label.replace('_', ' ').strip()
+
+    @staticmethod
+    def _tool_description(path, max_lines=4):
+        """Lee el encabezado del script y devuelve su descripción para el tooltip.
+        Busca un bloque DESCRIPTION/Description:, si no, la primera línea con texto."""
+        try:
+            raw = open(path, "rb").read(4000)
+            try:    head = raw.decode("utf-8")
+            except UnicodeDecodeError: head = raw.decode("cp1252", "replace")
+        except Exception:
+            return ""
+        lines = []
+        for l in head.splitlines()[:60]:
+            l = re.sub(r'^\s*(--|#|/\*|\*/|\*|"""|\'\'\')\s?', '', l).rstrip()
+            l = l.replace('*/', '').replace('"""', '').strip()
+            if re.fullmatch(r'[=\-─━_*#~ ]*', l): l = ""      # separadores
+            if re.search(r'-\*-\s*coding', l): l = ""          # cabecera de encoding .py
+            lines.append(l)
+        desc = []
+        for i, l in enumerate(lines):
+            m = re.match(r'(?i)^description\s*:?\s*(.*)$', l)
+            if m:
+                if m.group(1): desc.append(m.group(1))
+                for nxt in lines[i+1:]:
+                    if not nxt or re.match(r'^[A-Z][A-Z /&]{3,}$', nxt): break   # fin de bloque
+                    desc.append(nxt)
+                    if nxt.endswith(".") or len(desc) >= max_lines: break   # primera frase
+                break
+        if not desc:
+            desc = [next((l for l in lines if l), "")]
+        elif not desc[-1].endswith("."):
+            desc[-1] += " …"
+        return "\n".join(desc)
+
+    def _fill_tools_menu(self, menu, folder):
+        """Agrega scripts de folder al menú; cada subcarpeta es un submenú. Devuelve cantidad."""
+        try:
+            entries = sorted(os.listdir(folder), key=str.lower)
+        except Exception:
+            return 0
+        count = 0
+        for d in entries:
+            sub = os.path.join(folder, d)
+            if os.path.isdir(sub) and not d.startswith(("_", ".")):
+                sm = menu.addMenu(self._tool_label(d))
+                sm.setToolTipsVisible(True)
+                n = self._fill_tools_menu(sm, sub)
+                if n == 0: menu.removeAction(sm.menuAction())
+                count += n
+        for f in entries:
+            full = os.path.join(folder, f)
+            if (os.path.isfile(full) and f.lower().endswith((".ms", ".mse", ".py"))
+                    and not f.startswith(("_", "."))):
+                act = menu.addAction(self._tool_label(f))
+                tip = self._tool_description(full)
+                act.setToolTip(f"{tip}\n\n{f}" if tip else f)
+                act.triggered.connect(lambda checked=False, p=full: self._run_smart_script(p))
+                count += 1
+        return count
+
     def _open_tools_menu(self):
         tools_dir = PATH_TOOLS_DIR
         menu = QtWidgets.QMenu(self)
+        menu.setToolTipsVisible(True)
         menu.setStyleSheet(f"""
             QMenu {{
                 background-color: #2d2d2d; color: {MX_TEXT};
@@ -1437,37 +1505,23 @@ class StudioToolbar(QtWidgets.QWidget):
             }}
             QMenu::item {{ padding: 5px 18px 5px 10px; }}
             QMenu::item:selected {{ background-color: #3a3a3a; color: white; }}
+            QMenu::item:disabled {{ color: #777; }}
             QMenu::separator {{ height: 1px; background: #444; margin: 2px 0; }}
         """)
 
         if not os.path.isdir(tools_dir):
-            act = menu.addAction(f"Folder not found: {tools_dir}")
-            act.setEnabled(False)
+            menu.addAction(f"Folder not found: {tools_dir}").setEnabled(False)
         else:
-            scripts = sorted([
-                f for f in os.listdir(tools_dir)
-                if f.lower().endswith((".ms", ".py")) and not f.startswith("_")
-            ])
-            if not scripts:
-                act = menu.addAction("No scripts found")
-                act.setEnabled(False)
-            else:
-                for fname in scripts:
-                    # STM_CarRig.ms  →  "Car Rig"
-                    label = os.path.splitext(fname)[0]
-                    label = re.sub(r'^STM_', '', label)
-                    label = re.sub(r'([a-z])([A-Z])', r'\1 \2', label)
-                    label = label.replace('_', ' ')
-                    full_path = os.path.join(tools_dir, fname)
-                    act = menu.addAction(label)
-                    act.setData(full_path)
-                    act.triggered.connect(lambda checked, p=full_path: self._run_smart_script(p))
+            if self._fill_tools_menu(menu, tools_dir) == 0:
+                menu.addAction("No scripts found").setEnabled(False)
+            menu.addSeparator()
+            act = menu.addAction("Open tools folder…")
+            act.setToolTip(tools_dir)
+            act.triggered.connect(lambda: os.startfile(tools_dir))
 
         # Abrir el menú justo debajo del botón
-        btn_pos = self.btn_tools_menu.mapToGlobal(
-            QtCore.QPoint(0, self.btn_tools_menu.height())
-        )
-        menu.exec(btn_pos)
+        menu.exec(self.btn_tools_menu.mapToGlobal(
+            QtCore.QPoint(0, self.btn_tools_menu.height())))
 
     # ── script runner ─────────────────────────────────────────────────────────
     def _run_smart_script(self, path):
@@ -1860,9 +1914,55 @@ class StudioToolbar(QtWidgets.QWidget):
             os.makedirs(pub_dir, exist_ok=True)
             rt.rendSaveFile       = True
             rt.rendOutputFilename = os.path.join(pub_dir, exr_name)
-            self._set_status("Render set", "#70aa70")
+            extra = self._set_renderer_outputs(pub_dir, folder_name, cfg.get('render_sep', '_'))
+            self._set_status("Render set" + (f" +{extra}" if extra else ""), "#70aa70")
         except Exception as e:
             self._set_status("SET RENDER Error", "#e06060"); print(e)
+
+    def _set_renderer_outputs(self, pub_dir, base, sep):
+        """Apunta al publish las salidas que el renderer escribe por su cuenta.
+        Solo actualiza rutas de salidas YA activas — no prende nada nuevo.
+        Devuelve cuántas salidas extra se actualizaron (para el status)."""
+        done = []
+        r = rt.renderers.current
+        rclass = str(rt.classOf(r)).lower()
+
+        # Render Elements de Max (V-Ray, Corona, Scanline, Arnold legacy…)
+        try:
+            mgr = rt.maxOps.GetCurRenderElementMgr()
+            for i in range(mgr.NumRenderElements()):
+                el = mgr.GetRenderElement(i)
+                if not el.enabled: continue
+                el_name = re.sub(r'[\\/:*?"<>|\s]+', '_', str(el.elementName)).strip("_")
+                mgr.SetRenderElementFilename(i, os.path.join(pub_dir, f"{base}_{el_name}{sep}.exr"))
+                done.append(f"elem:{el_name}")
+        except Exception as e:
+            print(f"[STM Render] elements: {e}")
+
+        # V-Ray VFB: Raw image file y Separate render channels
+        if "v_ray" in rclass or "vray" in rclass:
+            try:
+                if getattr(r, "output_saveRawFile", False):
+                    r.output_rawFileName = os.path.join(pub_dir, f"{base}{sep}.exr")
+                    done.append("vray:raw")
+                if getattr(r, "output_splitgbuffer", False):
+                    r.output_splitfilename = os.path.join(pub_dir, f"{base}{sep}.exr")
+                    done.append("vray:split")
+            except Exception as e:
+                print(f"[STM Render] V-Ray: {e}")
+
+        # Arnold: carpeta de salida del AOV Manager
+        if "arnold" in rclass:
+            try:
+                aov = r.AOVManager
+                if aov is not None and hasattr(aov, "outputPath"):
+                    aov.outputPath = pub_dir
+                    done.append("arnold:aov")
+            except Exception as e:
+                print(f"[STM Render] Arnold: {e}")
+
+        if done: print(f"[STM Render] {rclass} → {pub_dir}  ({', '.join(done)})")
+        return len(done)
 
     def open_scene_dialog(self):
         project  = self.project_cb.currentText()

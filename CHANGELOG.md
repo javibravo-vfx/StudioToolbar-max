@@ -1,5 +1,17 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.5.38
+- **Set Render** now also points renderer-owned outputs to the publish folder (only outputs already enabled — nothing is switched on):
+  - Max Render Elements → `<version>_<Element><sep>.exr`
+  - V-Ray VFB Raw image file and Separate render channels
+  - Arnold AOV Manager output path
+  - Status shows `Render set +N` when extra outputs were updated; details printed to the Listener
+- **TOOLS ▾** menu:
+  - Subfolders inside `tools/` appear as submenus (empty ones hidden; `_` / `.` prefixed ignored)
+  - Hover tooltip with the script's description, read from its header
+  - `Open tools folder…` entry at the bottom
+  - `.mse` (encrypted MAXScript) supported
+
 ## v2.5.37
 - Fix: closing the toolbar (X) now really destroys it — the 500 ms sync timer and the `filePostOpen` callback no longer keep running / pointing at a dead widget
 - Fix: startup no longer fires the project → sequence → shot chain once per list item (could pop "Create 3D folder?" for the wrong project)

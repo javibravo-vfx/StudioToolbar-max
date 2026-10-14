@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.5.41"
+VERSION = "2.5.42"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -1345,15 +1345,17 @@ class StudioToolbar(QtWidgets.QWidget):
         self.set_save_btn.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.set_save_btn.setToolTip("Set Render Output — sets the render filename to the selected shot's publish folder")
 
-        self.auto_chk = QtWidgets.QCheckBox("AUTO")
-        self.auto_chk.setFixedHeight(H)
-        self.auto_chk.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.auto_chk.setToolTip("AUTO — uses dropdown name (shot_task_v001) instead of current Max filename")
-
-        self.inc_chk = QtWidgets.QCheckBox("INC")
-        self.inc_chk.setFixedHeight(H)
-        self.inc_chk.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.inc_chk.setToolTip("INC — auto-increments version number (v001 → v002…)")
+        self.shotname_chk = QtWidgets.QCheckBox("SHOT NAME")
+        self.shotname_chk.setFixedHeight(H)
+        self.shotname_chk.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.shotname_chk.setToolTip(
+            "SET RENDER naming\n"
+            "  ON  → render named after the dropdowns:  shot_task_v###\n"
+            "  OFF → render named after the open .max file\n"
+            "The version always comes from the .max file.\n"
+            "Use ON to render several shots from the same .max.")
+        self.shotname_chk.setChecked(bool(load_state().get("render_shot_name", False)))
+        self.shotname_chk.toggled.connect(lambda on: save_state({"render_shot_name": bool(on)}))
 
         self.reset_btn = QtWidgets.QPushButton("RESET")
         self.reset_btn.setObjectName("reset_btn"); self.reset_btn.setFixedHeight(H)
@@ -1363,9 +1365,7 @@ class StudioToolbar(QtWidgets.QWidget):
         for b in [self.open_btn, self.save_scene_btn, self.get_btn, self.set_path_btn, self.set_save_btn]:
             L.addWidget(b); L.addSpacing(6)
         L.addSpacing(6)
-        L.addWidget(self.auto_chk)
-        L.addSpacing(4)
-        L.addWidget(self.inc_chk)
+        L.addWidget(self.shotname_chk)
         L.addSpacing(10)
         L.addWidget(self.reset_btn)
 
@@ -1938,56 +1938,40 @@ class StudioToolbar(QtWidgets.QWidget):
             cfg          = _cfg()
             publish_base = os.path.join(get_pipeline_base(), f"{cfg['project_prefix']}{project}",
                                         seq, shot, "3D", task, cfg["sub_publish"])
-            use_auto = self.auto_chk.isChecked()
-            use_inc  = self.inc_chk.isChecked()
             task_clean  = task.split("_", 1)[-1] if "_" in task else task
-
-            # Prefijo base sin _vXXX (para buscar versiones existentes)
-            if use_auto:
-                # Desde dropdowns: shot_task
-                prefix = f"{shot}_{task_clean}"
-            else:
-                # Desde el archivo Max actual — extraer prefijo sin _vXXX
-                current_max = str(rt.maxFileName)
-                raw = os.path.splitext(current_max)[0] if current_max else f"{shot}_{task_clean}"
-                m   = re.match(r'^(.+?)(_v\d+)?$', raw)
-                prefix = m.group(1) if m else raw
-
-            # Versión del archivo Max abierto — siempre es el punto de partida
             current_max = str(rt.maxFileName)
             raw_name    = os.path.splitext(current_max)[0] if current_max else ""
-            mv_file     = re.search(r'_v(\d+)$', raw_name)
-            if mv_file:
-                file_ver = int(mv_file.group(1))
-                pad      = len(mv_file.group(1))
-            else:
-                file_ver = 1
-                pad      = 3
 
-            if use_inc:
-                # Con INC: buscar el mayor en disco
-                existing = [d for d in (os.listdir(publish_base) if os.path.isdir(publish_base) else [])
-                            if re.match(r'^' + re.escape(prefix) + r'_v\d+$', d)]
-                max_ver = 0
-                for d in existing:
-                    mv = re.search(r'_v(\d+)$', d)
-                    if mv:
-                        n = int(mv.group(1))
-                        if n > max_ver:
-                            max_ver = n
-                            pad     = len(mv.group(1))
-                # Usar el mayor entre disco y archivo abierto
-                # Si la carpeta del archivo ya existe → incrementar, si no → usar la del archivo
-                current_folder = f"{prefix}_v{file_ver:0{pad}d}"
-                current_exists = os.path.isdir(os.path.join(publish_base, current_folder))
-                if current_exists:
-                    next_ver    = max(max_ver, file_ver) + 1
-                    folder_name = f"{prefix}_v{next_ver:0{pad}d}"
-                else:
-                    folder_name = current_folder
+            # Nombre base sin _vXXX: dropdowns (SHOT NAME) o archivo Max abierto
+            if self.shotname_chk.isChecked() or not raw_name:
+                prefix = f"{shot}_{task_clean}"
             else:
-                # Sin INC: usar exactamente la versión del archivo abierto
-                folder_name = f"{prefix}_v{file_ver:0{pad}d}"
+                m = re.match(r'^(.+?)(_v\d+)?$', raw_name)
+                prefix = m.group(1) if m else raw_name
+
+            # Versión: siempre la del archivo Max abierto
+            mv_file = re.search(r'_v(\d+)$', raw_name)
+            file_ver, pad = (int(mv_file.group(1)), len(mv_file.group(1))) if mv_file else (1, 3)
+            folder_name = f"{prefix}_v{file_ver:0{pad}d}"
+
+            # Si esa versión ya tiene renders, preguntar en vez de pisar en silencio
+            target = os.path.join(publish_base, folder_name)
+            if os.path.isdir(target) and any(os.scandir(target)):
+                box = QtWidgets.QMessageBox(self)
+                box.setWindowTitle("Set Render")
+                box.setText(f"{folder_name} already has renders.")
+                box.setInformativeText("Overwrite them, or render to the next free version?")
+                b_over = box.addButton("Overwrite", QtWidgets.QMessageBox.DestructiveRole)
+                b_new  = box.addButton("New version", QtWidgets.QMessageBox.AcceptRole)
+                box.addButton(QtWidgets.QMessageBox.Cancel)
+                box.setDefaultButton(b_new)
+                box.exec()
+                if box.clickedButton() is b_new:
+                    rx = re.compile(r'^' + re.escape(prefix) + r'_v(\d+)$', re.IGNORECASE)
+                    used = [int(m.group(1)) for d in os.listdir(publish_base) if (m := rx.match(d))]
+                    folder_name = f"{prefix}_v{max(used + [file_ver]) + 1:0{pad}d}"
+                elif box.clickedButton() is not b_over:
+                    self._set_status("Cancelled"); return
 
             pub_dir  = os.path.join(publish_base, folder_name)
             exr_name = f"{folder_name}{cfg.get('render_sep', '_')}.exr"

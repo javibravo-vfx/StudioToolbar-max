@@ -1,5 +1,9 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.5.42
+- **AUTO → SHOT NAME.** Same function, clearer name: when ON, SET RENDER names the render after the dropdowns (`shot_task_v###`) instead of the open .max — for rendering several shots from one scene. State is remembered between sessions
+- **INC removed.** The render version is always the .max version. If that version folder already has renders, SET RENDER asks: **Overwrite / New version / Cancel** (New version = next free number) instead of silently overwriting or silently bumping
+
 ## v2.5.41
 - Fix: stored paths were skipped when the task couldn't be read from the file location (`3D` vs `3d`, or file not inside a task folder). Comparison is now case-insensitive and the task is only required when the file sits inside a task folder; project/seq/shot must always match
 - GET also reads the task when the folder is `3d` (lowercase)

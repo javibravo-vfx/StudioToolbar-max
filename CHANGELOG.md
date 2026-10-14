@@ -1,5 +1,16 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.6.1
+- **Setup dialog redesigned:** sidebar with four pages (Project · Tasks · Folders · Output) instead of one 1280 px column
+  - Project: Browse… for the root, live check — lists the projects found or warns if the root doesn't exist
+  - Tasks: task list and its scenes-subfolders side by side — select a task to edit its subfolders
+  - Folders: live preview of the resulting folder tree, with roles (scenes / review / renders / snapshots)
+  - Output: snapshots (destination, name parts, example) and render frame separator
+  - Footer: preset combo · Load · Save as… · delete · Config folder · Cancel · Save & Apply
+- **Fix:** Save & Apply no longer wipes other settings stored in the same file (custom viewport BG colour presets were reset to defaults)
+- Toolbar: FPS no longer truncated ("3…S"), "mm" no longer cut to "mn", bigger and bolder mini icons and spinner arrows, proper gear icon
+- Width kept below v2.5 (shot dropdown slightly narrower)
+
 ## v2.6.0 — redesign (branch `v2.6`)
 **Look**
 - Dock title bar is now a vertical handle on the left → toolbar is 16 px shorter (still draggable / floatable)

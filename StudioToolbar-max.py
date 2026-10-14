@@ -1124,7 +1124,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.btn_img_plane.setToolTip("Image Plane\nCreates a reference image plane inside the active viewport")
         self.btn_rem_back.setToolTip("Remove Background\nRemoves/hides the environment background from the scene")
         self.btn_textures.setToolTip("Show Textures\nToggles texture display in the viewport (on/off)")
-        self.btn_bake_cam.setToolTip("Bake Camera\nBakes the active camera animation to an Alembic (.abc) cache")
+        self.btn_bake_cam.setToolTip("Bake Camera\nSelect an Alembic camera — bakes its transform and FOV into a native Free Camera")
         self.btn_library.setToolTip("Studio Library MAX\nOpens the pose/animation library manager")
 
         for b in [self.btn_overscan, self.btn_img_plane, self.btn_rem_back,
@@ -1333,7 +1333,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.get_btn = QtWidgets.QPushButton("GET")
         self.get_btn.setObjectName("action_btn"); self.get_btn.setFixedHeight(H)
         self.get_btn.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.get_btn.setToolTip("Read current render settings and path config from 3ds Max")
+        self.get_btn.setToolTip("GET — fills Project / Sequence / Shot / Task from the open file's folder")
 
         self.set_path_btn = QtWidgets.QPushButton("PATHS")
         self.set_path_btn.setObjectName("action_btn"); self.set_path_btn.setFixedHeight(H)

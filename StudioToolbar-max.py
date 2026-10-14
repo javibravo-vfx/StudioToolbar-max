@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.5.42"
+VERSION = "2.6.0"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -109,7 +109,7 @@ CFG_RENDER_SEP = "_"
 # ╚══════════════════════════════════════════════════════════════════╝
 
 # ── Internal paths ────────────────────────────────────────────────────────────
-PIPE_DIR     = os.path.expanduser("~\\.studio-toolbar")
+PIPE_DIR     = os.path.expanduser(os.path.join("~", ".studio-toolbar"))
 INI_PATH     = os.path.join(PIPE_DIR, "pipeline_state.ini")
 PIPELINE_CFG = os.path.join(PIPE_DIR, "pipeline_config.ini")
 
@@ -203,6 +203,29 @@ def get_task_projects_subs(task_name):
 TASKS_TEMPLATE      = ["1_matchmove","2_model","3_retopo","4_rigging","5_shaders","6_animation","7_fx","8_lighting"]
 SUBFOLDERS_TEMPLATE = {"projects":"1_projects","review":"2_review","publish":"3_publish"}
 
+# ── Built-in presets (aparecen debajo de los presets guardados por el usuario) ──
+BUILTIN_RES = [
+    ("HD",              1920, 1080), ("HD 720",          1280,  720),
+    ("UHD 4K",          3840, 2160), ("DCI 2K",          2048, 1080),
+    ("DCI 4K",          4096, 2160), ("2K Scope 2.39",   2048,  858),
+    ("Square 1:1",      1080, 1080), ("Vertical 9:16",   1080, 1920),
+    ("Social 4:5",      1080, 1350),
+]
+# Ancho de sensor (mm) del modo de grabación más usado de cada cámara
+BUILTIN_FILM = [
+    ("3ds Max default / Full Frame",       36.00),
+    ("ARRI Alexa 35 — Open Gate",          27.99),
+    ("ARRI Alexa Mini LF — Open Gate",     36.70),
+    ("ARRI Alexa Mini — Open Gate 3.4K",   28.25),
+    ("RED V-Raptor 8K VV",                 40.96),
+    ("RED Komodo 6K",                      27.03),
+    ("Sony Venice 2 — 8.6K FF",            35.90),
+    ("Blackmagic Pocket 6K",               23.10),
+    ("Super 35 — 4-perf full aperture",    24.89),
+    ("35mm Academy",                       21.95),
+    ("APS-C (Canon)",                      22.30),
+]
+
 # ── Paleta ────────────────────────────────────────────────────────────────────
 MX_BG        = "#3c3c3c"
 MX_BG_BTN    = "#3c3c3c"
@@ -236,6 +259,34 @@ TOOL_SZ = 40     # ancho y alto del botón
 ICON_SZ = 28     # tamaño del SVG
 H       = 22     # altura estándar de inputs/combos/botones normales
 
+# ── Flechas de combos/spinners como SVG en disco ──────────────────────────────
+# Los triángulos hechos con bordes CSS se ven como una barra "=" en Qt;
+# los stylesheets necesitan un archivo para image: url(...), así que se escriben una vez.
+STYLE_ICON_DIR = os.path.join(PIPE_DIR, "icons")
+
+def _ensure_style_icons():
+    arrows = {
+        "arrow_down":    '<path d="M3 5.5l4 4 4-4"/>',
+        "arrow_up":      '<path d="M3 8.5l4-4 4 4"/>',
+        "arrow_down_hi": '<path d="M3 5.5l4 4 4-4"/>',
+    }
+    try:
+        os.makedirs(STYLE_ICON_DIR, exist_ok=True)
+        for name, body in arrows.items():
+            col = "#e0e0e0" if name.endswith("_hi") else "#a0a0a0"
+            svg = (f'<svg viewBox="0 0 14 14" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="none" '
+                   f'stroke="{col}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">{body}</svg>')
+            path = os.path.join(STYLE_ICON_DIR, name + ".svg")
+            if not os.path.exists(path) or open(path).read() != svg:
+                with open(path, "w") as f: f.write(svg)
+    except Exception as e:
+        print(f"[STM] style icons: {e}")
+
+_ensure_style_icons()
+
+def _icon_url(name):
+    return os.path.join(STYLE_ICON_DIR, name + ".svg").replace("\\", "/")
+
 # ── Stylesheet ────────────────────────────────────────────────────────────────
 STYLE = f"""
 QWidget {{
@@ -260,11 +311,8 @@ QComboBox, QLineEdit, QDoubleSpinBox, QSpinBox {{
 QComboBox:hover, QLineEdit:hover, QDoubleSpinBox:hover, QSpinBox:hover {{ border-color: {MX_BORDER_HI}; }}
 QComboBox:focus, QLineEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus {{ border-color: {MX_BORDER_HI}; outline: none; }}
 QComboBox::drop-down {{ border: none; width: 16px; background: transparent; }}
-QComboBox::down-arrow {{
-    width:0; height:0;
-    border-left:4px solid transparent; border-right:4px solid transparent;
-    border-top:5px solid {MX_TEXT_DIM}; margin-right:4px;
-}}
+QComboBox::down-arrow {{ image: url({_icon_url("arrow_down")}); width: 10px; height: 10px; margin-right: 3px; }}
+QComboBox::down-arrow:hover, QComboBox::down-arrow:on {{ image: url({_icon_url("arrow_down_hi")}); }}
 QComboBox QAbstractItemView {{
     background-color: #2a2a2a; color: {MX_TEXT};
     border: 1px solid {MX_BORDER};
@@ -278,16 +326,8 @@ QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
 }}
 QSpinBox::up-button:hover, QSpinBox::down-button:hover,
 QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{ background-color: {MX_BG_BTN_HO}; }}
-QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
-    width:0; height:0;
-    border-left:3px solid transparent; border-right:3px solid transparent;
-    border-bottom:4px solid {MX_TEXT_DIM};
-}}
-QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
-    width:0; height:0;
-    border-left:3px solid transparent; border-right:3px solid transparent;
-    border-top:4px solid {MX_TEXT_DIM};
-}}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({_icon_url("arrow_up")}); width: 8px; height: 8px; }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({_icon_url("arrow_down")}); width: 8px; height: 8px; }}
 
 /* ── botón base — fixed, no stretch ─────────────────── */
 QPushButton {{
@@ -405,6 +445,46 @@ QMenu::item:selected {{ background-color: {MX_SEL_BG}; color: #ffffff; }}
 QMenu::item:disabled {{ color: #606060; }}
 QMenu::separator {{ height: 1px; background: {MX_SEP}; margin: 2px 6px; }}
 
+/* ── mini icon buttons (presets, lock, ×2, ½, setup…) ─── */
+QToolButton#mini_btn, QToolButton#mini_del {{
+    background-color: #464646; border: 1px solid {MX_BORDER}; border-radius: 2px; padding: 0;
+}}
+QToolButton#mini_btn:hover {{ background-color: {MX_BG_BTN_HO}; border-color: {MX_BORDER_HI}; }}
+QToolButton#mini_btn:pressed {{ background-color: {MX_BG_BTN_PR}; }}
+QToolButton#mini_btn:checked {{ background-color: #24404a; border-color: #3f8a9a; }}
+QToolButton#mini_del:hover {{ background-color: #583030; border-color: #884444; }}
+QToolButton#mini_btn::menu-indicator {{ image: none; width: 0; }}
+
+/* ── split action buttons (OPEN ▾ / SAVE ▾) ───────────── */
+QToolButton#action_btn {{
+    background-color: #484848; color: {MX_TEXT};
+    border: 1px solid {MX_BORDER}; border-radius: 1px;
+    padding: 0px 18px 0px 10px; height: {H}px; font-size: {FONT_MAIN};
+}}
+QToolButton#action_btn:hover {{ background-color: {MX_BG_BTN_HO}; border-color: {MX_BORDER_HI}; }}
+QToolButton#action_btn:pressed {{ background-color: {MX_BG_BTN_PR}; }}
+QToolButton#action_btn::menu-button {{
+    width: 14px; border-left: 1px solid {MX_BORDER}; background: transparent;
+}}
+QToolButton#action_btn::menu-button:hover {{ background-color: #5c5c5c; }}
+QToolButton#action_btn::menu-arrow {{ image: url({_icon_url("arrow_down")}); width: 9px; height: 9px; }}
+
+/* ── GET resaltado: el archivo abierto está en otro shot/task ── */
+QPushButton#action_btn[attention="true"] {{
+    color: #f0c060; border-color: #a07a2a; background-color: #4a4232;
+}}
+
+/* ── FPS clickeable ───────────────────────────────────── */
+QToolButton#fps_btn {{
+    background: transparent; border: 1px solid transparent; border-radius: 2px;
+    color: {MX_TEXT_DIM}; font-weight: bold; font-size: {FONT_MAIN}; padding: 0 4px;
+}}
+QToolButton#fps_btn:hover {{ border-color: {MX_BORDER}; color: {MX_TEXT}; background-color: #444444; }}
+QToolButton#fps_btn::menu-indicator {{ image: none; width: 0; }}
+
+/* ── aspect ratio readout ─────────────────────────────── */
+QLabel#aspect_lbl {{ color: #7d8f96; font-size: {FONT_SMALL}; }}
+
 /* ── tooltip ──────────────────────────────────────────── */
 QToolTip {{
     background-color: #2a2a2a; color: {MX_TEXT};
@@ -494,6 +574,48 @@ def _svg_snap(base, accent):
   <circle cx="18.5" cy="9" r="1.2" fill="{accent}" opacity="0.9"/>
 </svg>"""
 
+
+# ── Mini icons (16×16 viewBox) para botones chicos — reemplazan letras S/L/D/H ──
+def _mi(body, c):
+    return (f'<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="none" '
+            f'stroke="{c}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">{body}</svg>')
+
+MINI_ICONS = {
+    "save":   '<path d="M3 2.5h8l2.5 2.5v8.5h-10.5z"/><path d="M5.5 2.5v3.5h5v-3.5"/><rect x="5" y="9" width="6" height="4.5"/>',
+    "list":   '<path d="M5.5 4h8M5.5 8h8M5.5 12h8"/><circle cx="2.6" cy="4" r=".6"/><circle cx="2.6" cy="8" r=".6"/><circle cx="2.6" cy="12" r=".6"/>',
+    "trash":  '<path d="M2.5 4.5h11M6 4.5v-2h4v2M4 4.5l.7 9h6.6l.7-9M6.7 7v4.5M9.3 7v4.5"/>',
+    "lock":   '<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
+    "unlock": '<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1"/>',
+    "x2":     '<path d="M2.5 5l4 6M6.5 5l-4 6"/><path d="M9 6.2c.3-1 1.1-1.5 2-1.5 1.2 0 2 .8 2 1.8 0 1.6-2.5 2.6-4 4.5h4.2"/>',
+    "half":   '<path d="M3 4.5v4M2 5.5l1-1"/><path d="M12 3L4 13"/><path d="M9.2 9.6c.2-.7.8-1.1 1.6-1.1.9 0 1.5.6 1.5 1.3 0 1.2-1.9 1.9-3.1 3.2h3.3"/>',
+    "gear":   '<circle cx="8" cy="8" r="2"/><path d="M6.9 1.8h2.2l.4 1.8 1.2.7 1.8-.6 1.1 1.9-1.4 1.2v1.4l1.4 1.2-1.1 1.9-1.8-.6-1.2.7-.4 1.8H6.9l-.4-1.8-1.2-.7-1.8.6-1.1-1.9 1.4-1.2V7.3L1.4 6.1l1.1-1.9 1.8.6 1.2-.7z"/>',
+    "folder": '<path d="M1.8 4.2v8.3h12.4V5.5H7.6L6.2 3.5H2.5z"/>',
+    "plus":   '<path d="M8 3v10M3 8h10"/>',
+    "chevron":'<path d="M4.5 6.5L8 10l3.5-3.5"/>',
+}
+
+def _mini_icon(name, color=None, color_hover=None, size=16):
+    """QIcon nítido (2x) para botones chicos; estados Normal / Active(hover) / On(checked)."""
+    icon = QtGui.QIcon()
+    for mode, col in ((QtGui.QIcon.Normal, color or IC_BASE),
+                      (QtGui.QIcon.Active, color_hover or IC_HOVER),
+                      (QtGui.QIcon.Disabled, "#5a5a5a")):
+        pm = _svg_to_pixmap(_mi(MINI_ICONS[name], col), size * 2)
+        pm.setDevicePixelRatio(2.0)
+        icon.addPixmap(pm, mode, QtGui.QIcon.Off)
+    return icon
+
+def _mini_btn(icon, tooltip, obj="mini_btn", checkable=False):
+    b = QtWidgets.QToolButton()
+    b.setObjectName(obj)
+    b.setIcon(icon if isinstance(icon, QtGui.QIcon) else _mini_icon(icon))
+    b.setIconSize(QtCore.QSize(14, 14))
+    b.setFixedSize(22, H)
+    b.setToolTip(tooltip)
+    b.setCheckable(checkable)
+    b.setAutoRaise(False)
+    b.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+    return b
 
 def _svg_to_pixmap(svg_str, size=ICON_SZ):
     renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(svg_str.encode()))
@@ -1156,46 +1278,41 @@ class StudioToolbar(QtWidgets.QWidget):
         self.res_h.setToolTip("Render Height (pixels)")
         self.res_h.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
 
-        self.res_lock_btn = QtWidgets.QPushButton("🔓")
-        self.res_lock_btn.setObjectName("save_btn")
-        self.res_lock_btn.setFixedHeight(H); self.res_lock_btn.setFixedWidth(24)
-        self.res_lock_btn.setCheckable(True)
-        self.res_lock_btn.setToolTip("Lock aspect ratio — keeps W:H proportion when either value changes")
-        self.res_lock_btn.setStyleSheet(f"""
-            QPushButton {{ background-color: #484848; color: {MX_TEXT_DIM}; border: 1px solid {MX_BORDER};
-                          border-radius: 1px; font-size: 9pt; padding: 0; }}
-            QPushButton:checked {{ background-color: #2a3a4a; color: #4ec9c9; border-color: #4a7a9a; }}
-            QPushButton:hover {{ background-color: {MX_BG_BTN_HO}; border-color: {MX_BORDER_HI}; }}
-        """)
+        self.res_lock_btn = _mini_btn("unlock", "Lock aspect ratio — keeps W:H proportion when either value changes",
+                                      checkable=True)
+        self._ic_lock, self._ic_unlock = _mini_icon("lock", "#4ec9c9", "#7fe0e0"), _mini_icon("unlock")
 
-        self.res_x2_btn = QtWidgets.QPushButton("D")
-        self.res_x2_btn.setObjectName("save_btn")
-        self.res_x2_btn.setFixedHeight(H); self.res_x2_btn.setFixedWidth(20)
-        self.res_x2_btn.setToolTip("Double the resolution (W and H × 2, always even)")
+        self.res_x2_btn = _mini_btn("x2",   "Double the resolution (W and H × 2, always even)")
+        self.res_d2_btn = _mini_btn("half", "Halve the resolution (W and H ÷ 2, always even)")
 
-        self.res_d2_btn = QtWidgets.QPushButton("H")
-        self.res_d2_btn.setObjectName("save_btn")
-        self.res_d2_btn.setFixedHeight(H); self.res_d2_btn.setFixedWidth(20)
-        self.res_d2_btn.setToolTip("Halve the resolution (W and H ÷ 2, always even)")
+        self.res_aspect = QtWidgets.QLabel("1.78")
+        self.res_aspect.setObjectName("aspect_lbl")
+        self.res_aspect.setFixedWidth(34); self.res_aspect.setAlignment(QtCore.Qt.AlignCenter)
+        self.res_aspect.setToolTip("Aspect ratio (W ÷ H)")
 
         self.res_note = QtWidgets.QLineEdit()
         self.res_note.setObjectName("note_field"); self.res_note.setPlaceholderText("preset label…")
-        self.res_note.setFixedWidth(216); self.res_note.setFixedHeight(H)
+        self.res_note.setFixedWidth(206); self.res_note.setFixedHeight(H)
         self.res_note.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.res_note.setToolTip("Resolution preset label")
+        self.res_note.setToolTip("Resolution preset label — click the arrow to pick a preset")
+        # Lista de presets como flecha DENTRO del campo (antes botón L aparte)
+        self.res_list_act = self.res_note.addAction(_mini_icon("chevron"), QtWidgets.QLineEdit.TrailingPosition)
+        self.res_list_act.setToolTip("Saved + standard resolution presets")
 
-        self.res_s = QtWidgets.QPushButton("S"); self.res_s.setObjectName("save_btn"); self.res_s.setFixedHeight(H); self.res_s.setFixedWidth(20); self.res_s.setToolTip("Save resolution preset")
-        self.res_l = QtWidgets.QPushButton("L"); self.res_l.setObjectName("load_btn"); self.res_l.setFixedHeight(H); self.res_l.setFixedWidth(20); self.res_l.setToolTip("Load resolution preset from list")
-        self.res_d = QtWidgets.QPushButton("D"); self.res_d.setObjectName("del_btn");  self.res_d.setFixedHeight(H); self.res_d.setFixedWidth(20); self.res_d.setToolTip("Delete current resolution preset")
+        self.res_s = _mini_btn("save",  "Save resolution preset (uses the label)")
+        self.res_d = _mini_btn("trash", "Delete current resolution preset", obj="mini_del")
 
         for w in [self.res_w, _x, self.res_h]: L.addWidget(w)
-        L.addSpacing(4)
+        L.addSpacing(2)
+        L.addWidget(self.res_aspect)
+        L.addSpacing(2)
         L.addWidget(self.res_lock_btn)
         L.addSpacing(2)
         L.addWidget(self.res_x2_btn)
         L.addWidget(self.res_d2_btn)
-        L.addSpacing(4)
-        for w in [self.res_note, self.res_s, self.res_l, self.res_d]: L.addWidget(w)
+        L.addSpacing(6)
+        for w in [self.res_note, self.res_s, self.res_d]: L.addWidget(w)
+        L.addSpacing(0)
 
         # Stretch después de RESOLUTION — FILM size es su propia sección
         _stretch(L)
@@ -1218,16 +1335,17 @@ class StudioToolbar(QtWidgets.QWidget):
 
         self.film_note = QtWidgets.QLineEdit()
         self.film_note.setObjectName("note_field"); self.film_note.setPlaceholderText("camera / lens label…")
-        self.film_note.setFixedWidth(297); self.film_note.setFixedHeight(H)
+        self.film_note.setFixedWidth(270); self.film_note.setFixedHeight(H)
         self.film_note.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.film_note.setToolTip("Film size preset label (e.g. camera name or lens)")
+        self.film_note.setToolTip("Film size preset label — click the arrow for saved presets and camera sensors")
+        self.film_list_act = self.film_note.addAction(_mini_icon("chevron"), QtWidgets.QLineEdit.TrailingPosition)
+        self.film_list_act.setToolTip("Saved presets + camera sensor widths")
 
-        self.film_s = QtWidgets.QPushButton("S"); self.film_s.setObjectName("save_btn"); self.film_s.setFixedHeight(H); self.film_s.setFixedWidth(20); self.film_s.setToolTip("Save film size preset")
-        self.film_l = QtWidgets.QPushButton("L"); self.film_l.setObjectName("load_btn"); self.film_l.setFixedHeight(H); self.film_l.setFixedWidth(20); self.film_l.setToolTip("Load film size preset from list")
-        self.film_d = QtWidgets.QPushButton("D"); self.film_d.setObjectName("del_btn");  self.film_d.setFixedHeight(H); self.film_d.setFixedWidth(20); self.film_d.setToolTip("Delete current film size preset")
+        self.film_s = _mini_btn("save",  "Save film size preset (uses the label)")
+        self.film_d = _mini_btn("trash", "Delete current film size preset", obj="mini_del")
 
         L.addWidget(self.film_spin); L.addWidget(_mm)
-        for w in [self.film_note, self.film_s, self.film_l, self.film_d]: L.addWidget(w)
+        for w in [self.film_note, self.film_s, self.film_d]: L.addWidget(w)
 
         # Stretch después de FILM
         _stretch(L)
@@ -1235,11 +1353,13 @@ class StudioToolbar(QtWidgets.QWidget):
         # ── SECTION: FPS ──────────────────────────────────────────────────────
         _section_sep(L)
 
-        self.fps_lbl = QtWidgets.QLabel("— FPS")
-        self.fps_lbl.setObjectName("fps_val_lbl")
-        self.fps_lbl.setStyleSheet(f"color:{MX_TEXT_DIM}; font-size:{FONT_MAIN}; font-weight:bold; background:transparent;")
-        self.fps_lbl.setFixedWidth(62)
-        self.fps_lbl.setToolTip("Current scene frame rate (read-only)")
+        self.fps_lbl = QtWidgets.QToolButton()
+        self.fps_lbl.setObjectName("fps_btn")
+        self.fps_lbl.setText("— FPS")
+        self.fps_lbl.setFixedSize(62, H)
+        self.fps_lbl.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.fps_lbl.setToolTip("Scene frame rate — click to change")
+        self.fps_lbl.clicked.connect(self._show_fps_menu)
         L.addWidget(self.fps_lbl)
 
         # mini separador interno
@@ -1283,7 +1403,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.sequence_cb.setToolTip("Sequence folder")
 
         self.shot_cb = QtWidgets.QComboBox()
-        self.shot_cb.setFixedWidth(340); self.shot_cb.setFixedHeight(H)   # mucho más ancho
+        self.shot_cb.setFixedWidth(300); self.shot_cb.setFixedHeight(H)
         self.shot_cb.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.shot_cb.setToolTip("Shot")
 
@@ -1292,13 +1412,14 @@ class StudioToolbar(QtWidgets.QWidget):
         self.task_cb.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.task_cb.setToolTip("Task / department folder (e.g. 5_matchmove)")
 
-        self.add_btn = QtWidgets.QPushButton("+")
-        self.add_btn.setObjectName("add_btn"); self.add_btn.setFixedHeight(H); self.add_btn.setFixedWidth(20)
-        self.add_btn.setToolTip("Create a new task folder for the selected shot")
+        self.add_btn = _mini_btn("plus", "Create a new task folder for the selected shot")
+        self.folder_btn = _mini_btn("folder", "Open shot / task folders in Explorer")
 
         for w in [self.project_cb, self.sequence_cb, self.shot_cb, self.task_cb]:
             L.addWidget(w); L.addSpacing(2)
         L.addWidget(self.add_btn)
+        L.addSpacing(2)
+        L.addWidget(self.folder_btn)
 
         # Stretch después de PIPELINE
         _stretch(L)
@@ -1309,7 +1430,9 @@ class StudioToolbar(QtWidgets.QWidget):
         # Snap button — entre los dos boxes, tamaño icono original
         self.btn_snap = IconToolButton(_svg_snap, accent_color=IC_ACCENT2)
         self.btn_snap.setFixedSize(TOOL_SZ, TOOL_SZ)
-        self.btn_snap.setToolTip("Viewport Snapshot\nCaptures the active viewport and saves a JPG to the current task's review folder")
+        self.btn_snap.setToolTip("Viewport Snapshot\nCaptures the active viewport and saves a JPG to the current task's review folder\nRight-click: open snapshots folder")
+        self.btn_snap.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.btn_snap.customContextMenuRequested.connect(self._snap_context_menu)
         L.addWidget(self.btn_snap)
         L.addSpacing(4)
 
@@ -1320,15 +1443,21 @@ class StudioToolbar(QtWidgets.QWidget):
         # y se actualiza solo cuando el usuario elige un color
         L.addSpacing(8)
 
-        self.open_btn = QtWidgets.QPushButton("OPEN")
-        self.open_btn.setObjectName("action_btn"); self.open_btn.setFixedHeight(H)
-        self.open_btn.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.open_btn.setToolTip("Open a .max scene file from the selected shot/task folder")
+        def _split_btn(text, tip):
+            b = QtWidgets.QToolButton()
+            b.setObjectName("action_btn"); b.setText(text); b.setFixedHeight(H)
+            b.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+            b.setPopupMode(QtWidgets.QToolButton.MenuButtonPopup)
+            b.setToolTip(tip)
+            m = QtWidgets.QMenu(b); b.setMenu(m)
+            return b, m
 
-        self.save_scene_btn = QtWidgets.QPushButton("SAVE")
-        self.save_scene_btn.setObjectName("action_btn"); self.save_scene_btn.setFixedHeight(H)
-        self.save_scene_btn.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.save_scene_btn.setToolTip("Save Scene — opens Save dialog in the task folder with versioned filename ready")
+        self.open_btn, self._open_menu = _split_btn(
+            "OPEN", "OPEN — browse .max scenes in the task folder\n▾ recent versions of this task")
+        self._open_menu.aboutToShow.connect(self._fill_open_menu)
+        self.save_scene_btn, self._save_menu = _split_btn(
+            "SAVE", "SAVE — Save dialog in the task folder, next version pre-filled\n▾ save next version directly")
+        self._save_menu.aboutToShow.connect(self._fill_save_menu)
 
         self.get_btn = QtWidgets.QPushButton("GET")
         self.get_btn.setObjectName("action_btn"); self.get_btn.setFixedHeight(H)
@@ -1373,16 +1502,18 @@ class StudioToolbar(QtWidgets.QWidget):
         _section_sep(L)
 
         self.status_lbl  = QtWidgets.QLabel("Ready")
+        self.status_lbl.setTextFormat(QtCore.Qt.RichText)
         self.status_lbl.setObjectName("status_lbl")
         self.status_lbl.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.status_lbl.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.status_lbl.setToolTip("Last action — click for history")
+        self.status_lbl.installEventFilter(self)
+        self._status_log = []
 
         L.addWidget(self.status_lbl)
         L.addSpacing(8)
 
-        self.setup_btn = QtWidgets.QPushButton("⚙")
-        self.setup_btn.setObjectName("save_btn")
-        self.setup_btn.setFixedHeight(H); self.setup_btn.setFixedWidth(22)
-        self.setup_btn.setToolTip("Pipeline Setup — configure drive, prefix, tasks and folder names")
+        self.setup_btn = _mini_btn("gear", "Pipeline Setup — configure drive, prefix, tasks and folder names")
         L.addWidget(self.setup_btn)
 
     # ── signals ───────────────────────────────────────────────────────────────
@@ -1400,18 +1531,19 @@ class StudioToolbar(QtWidgets.QWidget):
         self.res_x2_btn.clicked.connect(self._res_multiply_2)
         self.res_d2_btn.clicked.connect(self._res_divide_2)
         self.res_s.clicked.connect(self._manual_save_res)
-        self.res_l.clicked.connect(self._show_res_menu)
+        self.res_list_act.triggered.connect(self._show_res_menu)
         self.res_d.clicked.connect(self._delete_res_preset)
         self.film_spin.valueChanged.connect(self._on_film_ui_change)
         self.film_spin.editingFinished.connect(self._write_film_to_max)
         self.film_s.clicked.connect(self._manual_save_film)
-        self.film_l.clicked.connect(self._show_film_menu)
+        self.film_list_act.triggered.connect(self._show_film_menu)
         self.film_d.clicked.connect(self._delete_film_preset)
         self.get_btn.clicked.connect(self._get_pipeline_from_path)
         self.project_cb.currentTextChanged.connect(self._on_project_changed)
         self.sequence_cb.currentTextChanged.connect(self._populate_shots)
         self.shot_cb.currentTextChanged.connect(self._refresh_tasks)
         self.add_btn.clicked.connect(self.show_task_menu)
+        self.folder_btn.clicked.connect(self._show_folder_menu)
         self.open_btn.clicked.connect(self.open_scene_dialog)
         self.save_scene_btn.clicked.connect(self.save_scene_dialog)
         self.set_path_btn.clicked.connect(self.set_paths_only)
@@ -1421,13 +1553,23 @@ class StudioToolbar(QtWidgets.QWidget):
         self.film_spin.installEventFilter(self)
 
     # ── status flash ─────────────────────────────────────────────────────────
-    def _set_status(self, text, color=None):
+    def _set_status(self, text, color=None, detail=None):
+        """Muestra el resultado de la última acción. `detail` (ej. la ruta completa)
+        queda en el tooltip y en el historial (click sobre el status)."""
         color = color or MX_TEXT_DIM
-        self.status_lbl.setText(text)
-        self.status_lbl.setStyleSheet(
-            f"color:{color}; font-size:{FONT_LABEL}; min-width:100px; background:transparent;")
-        QtCore.QTimer.singleShot(2200, lambda: self.status_lbl.setStyleSheet(
-            f"color:{MX_TEXT_DIM}; font-size:{FONT_LABEL}; min-width:100px; background:transparent;"))
+        self._status_log.append((datetime.now().strftime("%H:%M:%S"), text, color, detail or ""))
+        del self._status_log[:-25]
+        self._status_seq = getattr(self, "_status_seq", 0) + 1
+        seq = self._status_seq
+
+        def paint(dot, txt_col):
+            self.status_lbl.setText(f'<span style="color:{dot}">●</span>&nbsp;'
+                                    f'<span style="color:{txt_col}">{text}</span>')
+        paint(color, color)
+        self.status_lbl.setToolTip((detail + "\n\n" if detail else "") + "Click for history")
+        self.status_lbl.setStyleSheet(f"font-size:{FONT_LABEL}; min-width:110px; background:transparent;")
+        # A los 2.2 s el texto vuelve a gris; el punto conserva el color del resultado
+        QtCore.QTimer.singleShot(2200, lambda: seq == self._status_seq and paint(color, MX_TEXT_DIM))
 
     # ── tools dropdown menu ───────────────────────────────────────────────────
     @staticmethod
@@ -1526,6 +1668,174 @@ class StudioToolbar(QtWidgets.QWidget):
         menu.exec(self.btn_tools_menu.mapToGlobal(
             QtCore.QPoint(0, self.btn_tools_menu.height())))
 
+    # ── selección actual / rutas del pipeline ────────────────────────────────
+    def _sel(self):
+        """(project, seq, shot, task) de los dropdowns; shot es el nombre completo de carpeta."""
+        idx = self.shot_cb.currentIndex()
+        return (self.project_cb.currentText(), self.sequence_cb.currentText(),
+                self.shot_cb.itemData(idx) if idx >= 0 else None, self.task_cb.currentText())
+
+    def _shot_dir(self):
+        project, seq, shot, _ = self._sel()
+        if not all([project, seq, shot]): return None
+        return os.path.join(get_pipeline_base(), f"{_cfg()['project_prefix']}{project}", seq, shot)
+
+    def _task_dir(self, sub=None):
+        shot_dir, task = self._shot_dir(), self._sel()[3]
+        if not shot_dir or not task: return None
+        d = os.path.join(shot_dir, "3D", task)
+        return os.path.join(d, sub) if sub else d
+
+    def _snapshot_dir(self):
+        cfg = _cfg()
+        d = self._task_dir(cfg.get("thumb_subfolder", cfg.get("sub_review", "2_review")))
+        sub = cfg.get("thumb_subdir", "").strip()
+        return os.path.join(d, sub) if d and sub else d
+
+    @staticmethod
+    def _open_in_explorer(path):
+        try:
+            os.startfile(path)
+        except Exception as e:
+            print(f"[STM] open folder: {e}")
+
+    def _show_folder_menu(self):
+        cfg = _cfg()
+        m = QtWidgets.QMenu(self)
+        entries = [("Shot", self._shot_dir()), ("Task", self._task_dir())]
+        entries += [(f"   {sub}", self._task_dir(sub)) for sub in get_subfolders()]
+        snap = self._snapshot_dir()
+        if snap and snap not in [e[1] for e in entries]:
+            entries.append(("   Snapshots", snap))
+        for label, path in entries:
+            a = m.addAction(label)
+            ok = bool(path) and os.path.isdir(path)
+            a.setEnabled(ok)
+            if path: a.setToolTip(path)
+            a.triggered.connect(lambda c=False, p=path: self._open_in_explorer(p))
+        m.setToolTipsVisible(True)
+        m.exec(self._menu_below(self.folder_btn))
+
+    def _snap_context_menu(self, pos):
+        d = self._snapshot_dir()
+        m = QtWidgets.QMenu(self)
+        a = m.addAction("Open snapshots folder")
+        a.setEnabled(bool(d) and os.path.isdir(d))
+        a.triggered.connect(lambda: self._open_in_explorer(d))
+        m.exec(self.btn_snap.mapToGlobal(pos))
+
+    # ── FPS ──────────────────────────────────────────────────────────────────
+    def _show_fps_menu(self):
+        m = QtWidgets.QMenu(self)
+        try: cur = int(rt.frameRate)
+        except Exception: cur = None
+        for fps in (24, 25, 30, 48, 50, 60):
+            a = m.addAction(f"{fps} fps"); a.setCheckable(True); a.setChecked(fps == cur)
+            a.triggered.connect(lambda c=False, f=fps: self._set_fps(f))
+        m.exec(self._menu_below(self.fps_lbl))
+
+    def _set_fps(self, fps):
+        try:
+            rt.frameRate = fps
+            self._set_status(f"{fps} fps", "#70aa70")
+        except Exception as e:
+            self._set_status("FPS Error", "#e06060"); print(f"[STM] fps: {e}")
+
+    # ── OPEN ▾ / SAVE ▾ ──────────────────────────────────────────────────────
+    def _fill_open_menu(self):
+        m = self._open_menu; m.clear()
+        scene_dir = self._task_dir(_cfg()["sub_projects"])
+        files = []
+        if scene_dir and os.path.isdir(scene_dir):
+            files = sorted((f for f in os.listdir(scene_dir) if f.lower().endswith(".max")),
+                           key=lambda f: os.path.getmtime(os.path.join(scene_dir, f)), reverse=True)
+        if not files:
+            m.addAction("No scenes in this task yet").setEnabled(False); return
+        self._menu_header(m, "Recent in this task")
+        current = str(rt.maxFileName)
+        for f in files[:12]:
+            full = os.path.join(scene_dir, f)
+            when = datetime.fromtimestamp(os.path.getmtime(full)).strftime("%d %b %H:%M")
+            a = m.addAction(f"{f}      {when}")
+            if f == current: a.setCheckable(True); a.setChecked(True)
+            a.triggered.connect(lambda c=False, p=full: self._load_scene(p))
+
+    def _load_scene(self, path):
+        try:
+            if hasattr(rt, "checkForSave") and rt.checkForSave() is False:
+                return                               # el usuario canceló "¿guardar cambios?"
+            rt.loadMaxFile(path, useFileUnits=True, quiet=False)
+            self._set_status("File loaded", "#70aa70")
+        except Exception as e:
+            self._set_status("Open Error", "#e06060"); print(f"[STM] open: {e}")
+
+    def _next_scene_path(self):
+        """Ruta de la próxima versión: <task>/<projects>/<shot>_<task>_v###.max"""
+        _, _, shot, task = self._sel()
+        scene_dir = self._task_dir(_cfg()["sub_projects"])
+        if not scene_dir: return None
+        task_clean = task.split("_", 1)[-1] if "_" in task else task
+        base_name  = f"{shot}_{task_clean}"
+        rx = re.compile(r'^' + re.escape(base_name) + r'_v(\d+)\.max$', re.IGNORECASE)
+        max_ver = 0
+        if os.path.isdir(scene_dir):
+            for f in os.listdir(scene_dir):
+                mm = rx.match(f)
+                if mm: max_ver = max(max_ver, int(mm.group(1)))
+        return os.path.join(scene_dir, f"{base_name}_v{max_ver + 1:03d}.max")
+
+    def _fill_save_menu(self):
+        m = self._save_menu; m.clear()
+        nxt = self._next_scene_path()
+        if not nxt:
+            m.addAction("Select a task first").setEnabled(False); return
+        a = m.addAction(f"Save next version now  →  {os.path.basename(nxt)}")
+        a.triggered.connect(self._quick_save_next)
+
+    def _quick_save_next(self):
+        nxt = self._next_scene_path()
+        if not nxt: return
+        try:
+            os.makedirs(os.path.dirname(nxt), exist_ok=True)
+            rt.saveMaxFile(nxt)
+            ver = re.search(r'_v(\d+)\.max$', nxt).group(1)
+            self._set_status(f"Saved v{ver}", "#70aa70", nxt)
+        except Exception as e:
+            self._set_status("Save Error", "#e06060"); print(f"[STM] save: {e}")
+
+    # ── status history ───────────────────────────────────────────────────────
+    def _show_status_log(self):
+        m = QtWidgets.QMenu(self)
+        if not self._status_log:
+            m.addAction("No actions yet").setEnabled(False)
+        for t, text, col, detail in reversed(self._status_log):
+            pm = QtGui.QPixmap(8, 8); pm.fill(QtGui.QColor(col))
+            a = m.addAction(QtGui.QIcon(pm), f"{t}   {text}")
+            if detail:
+                a.setToolTip(f"{detail}\nClick to copy")
+                a.triggered.connect(lambda c=False, d=detail: QtWidgets.QApplication.clipboard().setText(d))
+        m.setToolTipsVisible(True)
+        m.exec(self._menu_below(self.status_lbl))
+
+    # ── GET resaltado cuando el archivo está en otro shot/task ───────────────
+    def _update_get_attention(self):
+        try:
+            info = self._parse_pipeline_path(rt.maxFilePath) if str(rt.maxFilePath) else None
+        except Exception:
+            info = None
+        want = False
+        if info:
+            project, seq, shot, task = self._sel()
+            here = (info["project"], info["seq"], info["shot"], info["task"] or task)
+            want = tuple(str(x or "").lower() for x in here) != \
+                   tuple(str(x or "").lower() for x in (project, seq, shot, task))
+        if bool(self.get_btn.property("attention")) != want:
+            self.get_btn.setProperty("attention", want)
+            self.get_btn.style().unpolish(self.get_btn); self.get_btn.style().polish(self.get_btn)
+            base = "GET — fills Project / Sequence / Shot / Task from the open file's folder"
+            self.get_btn.setToolTip(base + ("\n\n⚠ The open file is in a different shot/task than the dropdowns"
+                                            if want else ""))
+
     # ── script runner ─────────────────────────────────────────────────────────
     def _run_smart_script(self, path):
         if not os.path.exists(path):
@@ -1551,6 +1861,8 @@ class StudioToolbar(QtWidgets.QWidget):
             traceback.print_exc()
 
     def eventFilter(self, obj, event):
+        if obj is getattr(self, "status_lbl", None) and event.type() == QtCore.QEvent.MouseButtonPress:
+            self._show_status_log(); return True
         if obj is self.film_spin:
             if event.type() == QtCore.QEvent.FocusIn:  self.sync_timer.stop()
             elif event.type() == QtCore.QEvent.FocusOut: self.sync_timer.start(500)
@@ -1570,8 +1882,23 @@ class StudioToolbar(QtWidgets.QWidget):
         if self.res_lock_btn.isChecked():
             self._lock_ratio = w / h if h else 1.0
         self._write_res_to_max()
-        m = next((p for p in self.state.get("res_presets",[]) if p['w']==w and p['h']==h), None)
-        self.res_note.setText(m['n'] if m else "")
+        self.res_note.setText(self._res_label(w, h))
+
+    def _res_label(self, w, h):
+        """Nombre del preset guardado que coincide; si no hay, el estándar; si no, vacío."""
+        m = next((p for p in self.state.get("res_presets", []) if p['w'] == w and p['h'] == h), None)
+        if m: return m.get('n', "")
+        return next((n for n, bw, bh in BUILTIN_RES if (bw, bh) == (w, h)), "")
+
+    def _film_label(self, v):
+        m = next((p for p in self.state.get("film_presets", []) if abs(p['v'] - v) < 0.001), None)
+        if m: return m.get('n', "")
+        return next((n for n, bv in BUILTIN_FILM if abs(bv - v) < 0.001), "")
+
+    def _update_aspect(self):
+        w, h = self.res_w.value(), self.res_h.value()
+        txt = f"{w / h:.2f}" if h else "—"
+        if self.res_aspect.text() != txt: self.res_aspect.setText(txt)
 
     def _res_multiply_2(self):
         self._res_set(self.res_w.value() * 2, self.res_h.value() * 2)
@@ -1580,7 +1907,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self._res_set(self.res_w.value() // 2, self.res_h.value() // 2)
 
     def _on_lock_toggled(self, locked):
-        self.res_lock_btn.setText("🔒" if locked else "🔓")
+        self.res_lock_btn.setIcon(self._ic_lock if locked else self._ic_unlock)
         if locked:
             h = self.res_h.value()
             self._lock_ratio = self.res_w.value() / h if h else 1.0
@@ -1608,11 +1935,10 @@ class StudioToolbar(QtWidgets.QWidget):
         self._on_res_ui_change()
 
     def _on_res_ui_change(self):
+        self._update_aspect()
         if self.res_w.signalsBlocked(): return
         self._write_res_to_max()
-        m = next((p for p in self.state.get("res_presets",[])
-                  if p['w']==self.res_w.value() and p['h']==self.res_h.value()), None)
-        self.res_note.setText(m['n'] if m else "")
+        self.res_note.setText(self._res_label(self.res_w.value(), self.res_h.value()))
 
     def _manual_save_res(self):
         w,h,n = self.res_w.value(), self.res_h.value(), self.res_note.text()
@@ -1635,14 +1961,34 @@ class StudioToolbar(QtWidgets.QWidget):
         self.state["res_presets"]=nl; save_state({"res_presets":nl})
         self.res_note.clear(); self._set_status("Deleted")
 
+    @staticmethod
+    def _menu_header(m, text):
+        """Encabezado de sección en un menú. addSection() depende del estilo de Windows
+        y a veces no dibuja el texto; una acción deshabilitada se ve igual en todos."""
+        if m.actions(): m.addSeparator()
+        a = m.addAction(text.upper()); a.setEnabled(False)
+        f = a.font(); f.setPointSizeF(7.5); f.setBold(True); a.setFont(f)
+        return a
+
+    def _menu_below(self, widget):
+        return widget.mapToGlobal(QtCore.QPoint(0, widget.height()))
+
     def _show_res_menu(self):
         m = QtWidgets.QMenu(self); presets = self.state.get("res_presets",[])
+        cur = (self.res_w.value(), self.res_h.value())
+        self._menu_header(m, "Saved")
         if presets:
             for p in presets:
-                a = m.addAction(f"{p['w']} × {p['h']}   {p['n']}")
+                a = m.addAction(f"{p['w']} × {p['h']}    {p['n']}")
+                a.setCheckable(True); a.setChecked((p['w'], p['h']) == cur)
                 a.triggered.connect(lambda c=False, x=p: self._apply_res(x))
-        else: m.addAction("(no presets saved)").setEnabled(False)
-        m.exec(QtGui.QCursor.pos())
+        else: m.addAction("(none yet — type a label and press Save)").setEnabled(False)
+        self._menu_header(m, "Standard")
+        for name, w, h in BUILTIN_RES:
+            a = m.addAction(f"{w} × {h}    {name}")
+            a.setCheckable(True); a.setChecked((w, h) == cur)
+            a.triggered.connect(lambda c=False, x={"w": w, "h": h, "n": name}: self._apply_res(x))
+        m.exec(self._menu_below(self.res_note))
 
     def _apply_res(self, p):
         # Bloquear ambas señales para aplicar W y H de una sola vez sin cascada
@@ -1653,6 +1999,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.res_w.blockSignals(False)
         self.res_h.blockSignals(False)
         self.res_note.setText(p.get('n', ""))
+        self._update_aspect()
         # Si el lock está activo, actualizar el ratio al nuevo preset
         if self.res_lock_btn.isChecked():
             self._lock_ratio = p['w'] / p['h'] if p['h'] else 1.0
@@ -1661,9 +2008,7 @@ class StudioToolbar(QtWidgets.QWidget):
     # ── film ──────────────────────────────────────────────────────────────────
     def _on_film_ui_change(self):
         if self.film_spin.signalsBlocked(): return
-        m = next((p for p in self.state.get("film_presets",[])
-                  if abs(p['v']-self.film_spin.value())<0.001), None)
-        self.film_note.setText(m['n'] if m else "")
+        self.film_note.setText(self._film_label(self.film_spin.value()))
 
     def _manual_save_film(self):
         v,n = self.film_spin.value(), self.film_note.text()
@@ -1688,12 +2033,20 @@ class StudioToolbar(QtWidgets.QWidget):
 
     def _show_film_menu(self):
         m = QtWidgets.QMenu(self); presets = self.state.get("film_presets",[])
+        cur = self.film_spin.value()
+        self._menu_header(m, "Saved")
         if presets:
             for p in presets:
-                a = m.addAction(f"{p['v']} mm   {p['n']}")
+                a = m.addAction(f"{p['v']:.2f} mm    {p['n']}")
+                a.setCheckable(True); a.setChecked(abs(p['v'] - cur) < 0.001)
                 a.triggered.connect(lambda c=False, x=p: self._apply_film(x))
-        else: m.addAction("(no presets saved)").setEnabled(False)
-        m.exec(QtGui.QCursor.pos())
+        else: m.addAction("(none yet — type a label and press Save)").setEnabled(False)
+        self._menu_header(m, "Camera sensors (width)")
+        for name, v in BUILTIN_FILM:
+            a = m.addAction(f"{v:.2f} mm    {name}")
+            a.setCheckable(True); a.setChecked(abs(v - cur) < 0.001)
+            a.triggered.connect(lambda c=False, x={"v": v, "n": name}: self._apply_film(x))
+        m.exec(self._menu_below(self.film_note))
 
     def _apply_film(self, p):
         self.film_spin.setValue(p['v']); self.film_note.setText(p.get('n',"")); self._write_film_to_max()
@@ -1875,7 +2228,7 @@ class StudioToolbar(QtWidgets.QWidget):
                 print(f"[STM Paths] store in file: {e}")
 
             save_state({"project": project, "sequence": seq, "shot": shot, "task": task})
-            self._set_status("Paths set", "#70aa70")
+            self._set_status("Paths set", "#70aa70", self._task_dir())
         except Exception as e:
             self._set_status("PATH Error", "#e06060"); print(e)
 
@@ -1979,7 +2332,8 @@ class StudioToolbar(QtWidgets.QWidget):
             rt.rendSaveFile       = True
             rt.rendOutputFilename = os.path.join(pub_dir, exr_name)
             extra = self._set_renderer_outputs(pub_dir, folder_name, cfg.get('render_sep', '_'))
-            self._set_status("Render set" + (f" +{extra}" if extra else ""), "#70aa70")
+            self._set_status("Render set" + (f" +{extra}" if extra else ""), "#70aa70",
+                             os.path.join(pub_dir, exr_name))
         except Exception as e:
             self._set_status("SET RENDER Error", "#e06060"); print(e)
 
@@ -2044,8 +2398,7 @@ class StudioToolbar(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Path Error", f"Folder not found:\n{scene_dir}"); return
         f = rt.getOpenFileName(caption="Open Max Scene", filename=scene_dir + "/", types="3ds Max(*.max)|*.max")
         if f:
-            rt.loadMaxFile(f, useFileUnits=True, quiet=False)
-            self._set_status("File loaded", "#70aa70")
+            self._load_scene(f)
 
     def save_scene_dialog(self):
         """Abre el Save dialog de Max en la carpeta del task con nombre versionado listo."""
@@ -2079,7 +2432,7 @@ class StudioToolbar(QtWidgets.QWidget):
         )
         if f:
             rt.saveMaxFile(f)
-            self._set_status("Saved", "#70aa70")
+            self._set_status("Saved", "#70aa70", f)
 
     def show_task_menu(self):
         project  = self.project_cb.currentText()
@@ -2158,9 +2511,9 @@ class StudioToolbar(QtWidgets.QWidget):
                     self.res_w.blockSignals(False); self.res_h.blockSignals(False)
                     self._syncing_from_max = False
                     # Actualizar solo la nota, sin escribir de vuelta a Max
-                    m = next((p for p in self.state.get("res_presets",[])
-                              if p['w']==mw and p['h']==mh), None)
-                    self.res_note.setText(m['n'] if m else "")
+                    self.res_note.setText(self._res_label(mw, mh))
+            self._update_aspect()
+            self._update_get_attention()
             val,source,color = None,"Standard", MX_TEXT_DIM
             sel = rt.selection
             if len(sel)==1:
@@ -2307,7 +2660,7 @@ class StudioToolbar(QtWidgets.QWidget):
             ok = capture_viewport_to_file(out_path)
 
             if ok and os.path.exists(out_path):
-                self._set_status("Snap OK", "#70aa70")
+                self._set_status("Snap OK", "#70aa70", out_path)
                 print(f"[Snap] {out_path}")
             else:
                 self._set_status("Snap failed", "#e06060")
@@ -2978,8 +3331,12 @@ def show_studio_toolbar():
     dock.setFeatures(
         QtWidgets.QDockWidget.DockWidgetMovable   |
         QtWidgets.QDockWidget.DockWidgetFloatable |
-        QtWidgets.QDockWidget.DockWidgetClosable
+        QtWidgets.QDockWidget.DockWidgetClosable  |
+        # Título vertical a la izquierda: sigue siendo la manija para arrastrar,
+        # pero no come una franja horizontal entera de alto.
+        QtWidgets.QDockWidget.DockWidgetVerticalTitleBar
     )
+    dock.setToolTip(f"Studio Toolbar for MAX  v{VERSION} — drag this handle to move / float")
     mgr = StudioToolbar(parent=main)
     dock.setWidget(mgr)
     mgr.setFixedHeight(TOOL_SZ + 8)
@@ -2990,11 +3347,15 @@ def show_studio_toolbar():
             font-size: 8pt;
         }}
         QDockWidget::title {{
-            background: #333333;
-            border-bottom: 1px solid {MX_SEP};
-            padding-left: 6px;
-            padding-top: 1px;
+            background: #303030;
+            border-right: 1px solid {MX_SEP};
+            padding: 4px 1px;
+            text-align: center;
         }}
+        QDockWidget::close-button, QDockWidget::float-button {{
+            background: transparent; border: none; padding: 0px; icon-size: 10px;
+        }}
+        QDockWidget::close-button:hover, QDockWidget::float-button:hover {{ background: #505050; }}
     """)
     # Esquinas superiores al área top — dock ocupa todo el ancho de punta a punta
     main.setCorner(QtCore.Qt.TopLeftCorner,  QtCore.Qt.TopDockWidgetArea)

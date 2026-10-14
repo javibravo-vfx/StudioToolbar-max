@@ -1,5 +1,28 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.6.0 — redesign (branch `v2.6`)
+**Look**
+- Dock title bar is now a vertical handle on the left → toolbar is 16 px shorter (still draggable / floatable)
+- Small buttons use crisp SVG icons instead of letters/emoji: save, delete, lock, ×2, ½, +, folder, setup
+- Combo / spinner / menu arrows are real chevrons (CSS triangles rendered as "=" bars in Qt)
+- Status shows a coloured dot; text fades back to grey, the dot keeps the result colour
+- Overall width slightly *narrower* than v2.5 despite the new controls
+
+**Resolution & film gate**
+- Preset list opens from an arrow inside the label field (replaces the separate L button)
+- Built-in presets under your saved ones: standard resolutions and cinema camera sensor widths
+- Label shows the matching preset name automatically (yours first, then built-in)
+- Live aspect ratio next to W×H
+
+**Pipeline & actions**
+- Folder button: open Shot / Task / task subfolders / snapshots folder in Explorer
+- OPEN ▾: recent .max versions of the selected task (asks to save changes first)
+- SAVE ▾: save next version in one click (no dialog)
+- GET glows amber when the open file belongs to a different shot/task than the dropdowns
+- FPS is clickable: 24 / 25 / 30 / 48 / 50 / 60
+- Snapshot button: right-click → open snapshots folder
+- Status history (click the status): last 25 actions with time and full path; click to copy
+
 ## v2.5.42
 - **AUTO → SHOT NAME.** Same function, clearer name: when ON, SET RENDER names the render after the dropdowns (`shot_task_v###`) instead of the open .max — for rendering several shots from one scene. State is remembered between sessions
 - **INC removed.** The render version is always the .max version. If that version folder already has renders, SET RENDER asks: **Overwrite / New version / Cancel** (New version = next free number) instead of silently overwriting or silently bumping

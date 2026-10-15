@@ -1,5 +1,8 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.6.2
+- Setup dialog: shrinking the window no longer squashes text — buttons and labels keep their text width (with Max's real font) and the dialog stops at its content's minimum size
+
 ## v2.6.1
 - **Setup dialog redesigned:** sidebar with four pages (Project · Tasks · Folders · Output) instead of one 1280 px column
   - Project: Browse… for the root, live check — lists the projects found or warns if the root doesn't exist

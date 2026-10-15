@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.6.1"
+VERSION = "2.6.2"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -2941,6 +2941,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         box.addWidget(listw, 1)
         row = QtWidgets.QHBoxLayout(); row.setSpacing(4)
         line_edit.setPlaceholderText(placeholder)
+        line_edit.setMinimumWidth(130)
         add = _mini_btn("plus", f"Add {label}"); add.setFixedSize(30, 28)
         dele = _mini_btn("trash", f"Delete selected {label}", obj="mini_del"); dele.setFixedSize(30, 28)
         add.clicked.connect(lambda: self._add_item(listw, line_edit))
@@ -2951,8 +2952,6 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         return box
 
     def _build(self):
-        self.resize(860, 600)
-        self.setMinimumSize(760, 540)
         outer = QtWidgets.QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
         body = QtWidgets.QHBoxLayout(); body.setContentsMargins(0, 0, 0, 0); body.setSpacing(0)
         outer.addLayout(body, 1)
@@ -3048,6 +3047,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         self.ed_new_sub = QtWidgets.QLineEdit()
         c.addLayout(self._list_editor(self.sub_list, self.ed_new_sub, "new subfolder…", "subfolder"), 1)
         c.addWidget(self._hint("1st = scenes · 2nd = review · 3rd = publish (renders)"))
+        card.setMinimumWidth(240)
         row.addWidget(card, 1)
         card, c = self._card("Resulting structure")
         self._tree_lbl = QtWidgets.QLabel(); self._tree_lbl.setObjectName("tree")
@@ -3155,6 +3155,20 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         if self.task_list.count(): self.task_list.setCurrentRow(len(tasks) - 1)
         self.nav.setCurrentRow(0)
         self._update_previews()
+
+        # Nunca aplastar textos: cada botón/etiqueta conserva al menos el ancho de su texto
+        # (con la fuente real de Max), y el diálogo no se achica por debajo de su contenido.
+        for w in [x for cls in (QtWidgets.QPushButton, QtWidgets.QLabel, QtWidgets.QCheckBox)
+                  for x in self.findChildren(cls)]:
+            if isinstance(w, QtWidgets.QLabel) and (w.wordWrap() or w.objectName() in ("tree", "preview")):
+                continue
+            w.ensurePolished()
+            w.setMinimumWidth(w.sizeHint().width())
+        self.preset_cb.setMinimumWidth(max(150, self.preset_cb.minimumWidth()))
+        self.preset_cb.setMaximumWidth(260)
+        outer.setSizeConstraint(QtWidgets.QLayout.SetMinimumSize)
+        self.setMinimumSize(0, 0)
+        self.resize(max(860, self.minimumSizeHint().width()), max(600, self.minimumSizeHint().height()))
 
     def _add_page(self, name, widget):
         self.nav.addItem(name); self.pages.addWidget(widget)

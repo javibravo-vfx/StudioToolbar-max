@@ -140,4 +140,4 @@ See [CHANGELOG.md](CHANGELOG.md) for history.
 
 ## Author
 
-**Javi Bravo** — VFX / Motion Graphics  
+**Javi Bravo** — VFX / 3D Artist  

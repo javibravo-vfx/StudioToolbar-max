@@ -2,23 +2,23 @@
 Script Name:    STM_ShowTextures.ms
 Version:        v2.0.0
 Description:
-    Toggle ON/OFF viewport textures para todos los materiales de la escena.
-    Prioriza el canal diffuse/base color segun el render engine.
-    Soporta: VRay, Arnold, FStorm, Corona, Octane, Standard, Physical.
-    Llamado via rt.fileIn() desde StudioToolbar-max.
+    Toggles viewport textures ON/OFF for every material in the scene.
+    Prefers the diffuse / base color map depending on the render engine.
+    Supports: V-Ray, Arnold, FStorm, Corona, Octane, Standard, Physical.
+    Run via rt.fileIn() from StudioToolbar-max.
 */
 
--- Inicializar estado solo la primera vez
+-- Initialise the state only the first time
 if STM_ShowTextures_State == undefined then
     global STM_ShowTextures_State = false
 
--- Invertir estado
+-- Flip the state
 STM_ShowTextures_State = not STM_ShowTextures_State
 
 -- -------------------------------------------------------
--- Devuelve el texmap "prioritario" (diffuse/base color)
--- segun el tipo de material. Si no encuentra, devuelve
--- el primer texmap disponible. Si no hay ninguno, undefined.
+-- Returns the "preferred" texmap (diffuse / base color)
+-- for the material type. Falls back to the first
+-- available texmap, or undefined if there is none.
 -- -------------------------------------------------------
 fn STM_GetPrimaryTexmap mat =
 (
@@ -29,7 +29,7 @@ fn STM_GetPrimaryTexmap mat =
     if matchPattern (matClass as string) pattern:"VRayMtl*" do (
         if mat.texmap_diffuse != undefined then tex = mat.texmap_diffuse
     )
-    -- VRay 2-sided, VRayBlend, etc: fallback a primer submap
+    -- VRay 2-sided, VRayBlend, etc: fall back to the first submap
     if tex == undefined and matchPattern (matClass as string) pattern:"VRay*" do (
         if (getNumSubTexmaps mat) > 0 then tex = getSubTexmap mat 1
     )
@@ -70,7 +70,7 @@ fn STM_GetPrimaryTexmap mat =
         if mat.base_color_map != undefined then tex = mat.base_color_map
     )
 
-    -- Fallback: primer submap disponible
+    -- Fallback: first available submap
     if tex == undefined then (
         local numSubs = getNumSubTexmaps mat
         for i = 1 to numSubs while tex == undefined do (
@@ -83,7 +83,7 @@ fn STM_GetPrimaryTexmap mat =
 )
 
 -- -------------------------------------------------------
--- Procesa un material: muestra su texmap prioritario
+-- Process one material: show its preferred texmap
 -- -------------------------------------------------------
 fn STM_ProcessMaterial mat newState =
 (
@@ -101,7 +101,7 @@ fn STM_ProcessMaterial mat newState =
 )
 
 -- -------------------------------------------------------
--- Aplicar a todos los objetos de la escena
+-- Apply to every object in the scene
 -- -------------------------------------------------------
 setWaitCursor()
 for obj in objects do (

@@ -1,5 +1,12 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.6.3
+- **Install:** `startup/StudioToolbar-max_Start.ms` — copy into a Max `scripts\startup` folder so the toolbar opens with 3ds Max (checks the path and reports in the Listener if the toolbar file is missing). README has the per-user and all-users folders
+- **Everything in English:** comments, docstrings and on-screen text of the toolbar and every bundled script (CarRig UI, StudioLibrary messages, MAXScript helpers). Verified with `dev/check_text_only.py`: only comments/strings changed, code identical
+  - CarRig: internal identifiers and scene data keys untouched (existing rigs keep working); the viewport label now reads FRONT on newly created rigs
+  - StudioLibrary re-saved as UTF-8 (it was cp1252 with a utf-8 header); lost placeholder glyph restored
+- `dev/check_text_only.py`: verifies a change touched only comments/strings, and flags single-word strings that could be data keys
+
 ## v2.6.2
 - Setup dialog: shrinking the window no longer squashes text — buttons and labels keep their text width (with Max's real font) and the dialog stops at its content's minimum size
 

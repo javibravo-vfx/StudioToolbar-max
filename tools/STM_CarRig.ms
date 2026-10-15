@@ -1,32 +1,32 @@
 /*
 ================================================================================
-  STM CarRig v1.7  -  Rig de autos con dummies para 3ds Max (MAXScript, gratis)
-  Parte de Studio Toolbar for MAX  -  menu TOOLS
-  Nota: los identificadores internos (CR_*, CarRigControls, user props CR_part /
-  CR_placing) NO se renombran: quedan guardados en las escenas con rigs existentes.
+  STM CarRig v1.7  -  Dummy-based car rig for 3ds Max (MAXScript, free)
+  Part of Studio Toolbar for MAX  -  TOOLS menu
+  Note: internal identifiers (CR_*, CarRigControls, user props CR_part /
+  CR_placing) must NOT be renamed: they are stored in scenes with existing rigs.
 --------------------------------------------------------------------------------
-  INTERFAZ: 1 RIG  ->  2 MANEJO  ->  3 SIMULAR   (+ Ajustes avanzados, plegado)
-  Pasando el mouse sobre cada control aparece su explicacion.
+  UI: 1 RIG  ->  2 DRIVE  ->  3 SIMULATE   (+ Advanced Settings, collapsed)
+  Hover over any control to see what it does.
 
-  FLUJO
-  1. TOOLS > Car Rig   (o MAXScript > Run Script > STM_CarRig.ms)
-  2. (Opcional) selecciona el auto modelado: los dummies se crean a su tamano.
-     CREAR RIG -> se crea el rig completo con dummies.
-  3. Ubicar: los unicos dummies que se mueven son los *_POS (naranja) y el ROOT.
-       - ROOT (amarillo, plano): en el piso, debajo del auto (mover/rotar).
-         El texto FRENTE marca hacia donde mira el auto.
-       - W??_POS: sobre cada rueda (FL FR RL RR).
-       - W??_RADIO (circulo): Radius = radio de la cubierta.
-       - BODY_POS: pivote de cabeceo/rolido de la carroceria.
-     Con UBICAR DUMMIES activado, tus modelos se desvinculan para poder mover
-     los dummies sin arrastrarlos. Al desactivarlo (o al bakear) se re-linkean.
-  4. Linkear (a mano o con los botones):
-       ruedas -> W??_SPIN | calipers -> W??_STEER | carroceria -> BODY_OFS
-  5. Animar el ROOT (a mano o con una spline) y SIMULAR / BAKE.
-     Cada bake relee la posicion de los *_POS y recalcula todo.
+  WORKFLOW
+  1. TOOLS > Car Rig   (or MAXScript > Run Script > STM_CarRig.ms)
+  2. (Optional) select the car model: the dummies are sized to fit it.
+     CREATE RIG -> builds the complete dummy rig.
+  3. Placement: the only dummies you move are the *_POS (orange) and the ROOT.
+       - ROOT (yellow, flat): on the ground, under the car (move/rotate).
+         The FRONT text shows which way the car faces.
+       - W??_POS: on each wheel (FL FR RL RR).
+       - W??_RADIO (circle): Radius = tire radius.
+       - BODY_POS: pitch/roll pivot of the body.
+     While PLACE DUMMIES is on, your models are unlinked so the dummies can be
+     moved without dragging them along. Turning it off (or baking) relinks them.
+  4. Link (by hand or with the buttons):
+       wheels -> W??_SPIN | calipers -> W??_STEER | body -> BODY_OFS
+  5. Animate the ROOT (by hand or along a spline), then SIMULATE / BAKE.
+     Every bake re-reads the *_POS positions and recalculates everything.
 
-  Capas manuales: los dummies *_OFS (verdes) se animan a mano y el bake no los pisa.
-  En el Modify del ROOT (animables): Spin mult, RPM extra, Steer mult/offset, Superficie.
+  Manual layers: the *_OFS dummies (green) are keyed by hand; the bake never touches them.
+  In the ROOT's Modify panel (animatable): Spin mult, RPM extra, Steer mult/offset, Surface.
 ================================================================================
 */
 
@@ -55,7 +55,7 @@ struct CR_RigData
 )
 
 -- ============================================================================
---  Atributos animables en el ROOT
+--  Animatable attributes on the ROOT
 -- ============================================================================
 global CR_CADef = attributes CarRigControls
 (
@@ -73,13 +73,13 @@ global CR_CADef = attributes CarRigControls
 		spinner spRPM    "RPM extra:"    range:[-5000,5000,0]   type:#float
 		spinner spSteerM "Steer mult:"   range:[-5,5,1]         type:#float
 		spinner spSteerO "Steer offset:" range:[-60,60,0]       type:#float
-		spinner spSurf   "Superficie:"   range:[0,10,1]         type:#float
-		label lb1 "Animables. Re-bakear tras cambios."
+		spinner spSurf   "Surface:"      range:[0,10,1]         type:#float
+		label lb1 "Animatable. Re-bake after changes."
 	)
 )
 
 -- ============================================================================
---  Utilidades
+--  Utilities
 -- ============================================================================
 fn CR_unitsPerMeter =
 (
@@ -106,7 +106,7 @@ fn CR_axisInfo v =
 	else #(3, (if v.z > 0 then 1.0 else -1.0))
 )
 
--- tamano de caja en ejes locales: largo (frente), ancho (lateral), alto
+-- box size in local axes: length (front), width (side), height
 fn CR_boxSize fwdV lenF lenL h = if (abs fwdV.y) > 0.5 then [lenL, lenF, h] else [lenF, lenL, h]
 
 fn CR_setRot node idx val =
@@ -194,7 +194,7 @@ fn CR_smooth arr hw =
 	)
 )
 
--- promedio solo hacia atras (causal): no mira frames futuros
+-- backward-only (causal) average: never looks at future frames
 fn CR_smoothPast arr hw =
 (
 	hw = hw as integer
@@ -213,7 +213,7 @@ fn CR_smoothPast arr hw =
 	)
 )
 
--- tangente hiperbolica: saturacion suave hacia un tope
+-- hyperbolic tangent: soft saturation toward a limit
 fn CR_tanh x =
 (
 	x = amax -20.0 (amin 20.0 x)
@@ -245,7 +245,7 @@ fn CR_progress p =
 )
 
 -- ============================================================================
---  Superficies procedurales (entrada x,y en cm de mundo, salida altura en cm)
+--  Procedural surfaces (input x,y in world cm, output height in cm)
 -- ============================================================================
 fn CR_hash ix iy sd =
 (
@@ -265,11 +265,11 @@ fn CR_surface preset x y sd =
 	local so = sd * 17.31
 	case preset of
 	(
-		-- asfalto liso
+		-- smooth asphalt
 		1: (0.06 * (CR_fbm [x/6.0, y/6.0, so] 3)) + (0.15 * (CR_fbm [x/90.0, y/90.0, so + 5.0] 2))
-		-- asfalto gastado
+		-- worn asphalt
 		2: (0.18 * (CR_fbm [x/8.0, y/8.0, so] 3)) + (0.6 * (CR_fbm [x/140.0, y/140.0, so + 5.0] 3))
-		-- empedrado / adoquines (aparejo trabado)
+		-- cobblestones / pavers (running bond)
 		3:
 		(
 			local stoneL = 20.0, stoneW = 12.0
@@ -284,14 +284,14 @@ fn CR_surface preset x y sd =
 			local hgt = 0.55 + 0.45 * (CR_hash cx row sd)
 			(1.6 * dome * hgt) + (0.25 * (CR_fbm [x/150.0, y/150.0, so] 2))
 		)
-		-- ripio
+		-- gravel
 		4: (0.45 * (CR_fbm [x/2.5, y/2.5, so] 2)) + (0.9 * (CR_fbm [x/35.0, y/35.0, so + 3.0] 3)) + (0.6 * (CR_fbm [x/200.0, y/200.0, so + 7.0] 2))
-		-- camino de tierra
+		-- dirt road
 		5: (2.5 * (CR_fbm [x/180.0, y/180.0, so] 3)) + (0.5 * (CR_fbm [x/20.0, y/20.0, so + 2.0] 2))
 		-- off-road
 		6: (7.0 * (CR_fbm [x/320.0, y/320.0, so] 3)) + (2.0 * (CR_fbm [x/45.0, y/45.0, so + 4.0] 3))
-		-- adoquin de granito antiguo: piedras 22x12 cm gastadas y redondeadas,
-		-- cada una hundida distinto y la calzada asentada en ondas
+		-- old granite pavers: worn, rounded 22x12 cm stones,
+		-- each sunk by a different amount, with the roadbed settled in waves
 		7:
 		(
 			local stoneL = 22.0, stoneW = 12.0
@@ -309,7 +309,7 @@ fn CR_surface preset x y sd =
 			local sunk = (h2 - 0.5) * 1.4 * (amin 1.0 (dome * 4.0))
 			stone + sunk + (1.5 * (CR_fbm [x/400.0, y/400.0, so] 2)) + (0.5 * (CR_fbm [x/60.0, y/60.0, so + 2.0] 2))
 		)
-		-- empedrado de piedra bola: cantos rodados irregulares de ~16 cm
+		-- round fieldstone paving: irregular ~16 cm cobbles
 		8:
 		(
 			local cs = 16.0
@@ -352,15 +352,15 @@ fn CR_groundH grounds p upV rayH =
 )
 
 -- ============================================================================
---  Crear rig de dummies
---  ROOT > W_POS (ubicacion) > W_SIM (bake: altura) > W_OFS (manual) > W_STEER (bake) > W_SPIN (bake)
---  ROOT > BODY_POS (ubicacion) > BODY_SIM (bake) > BODY_OFS (manual)
+--  Create dummy rig
+--  ROOT > W_POS (placement) > W_SIM (bake: height) > W_OFS (manual) > W_STEER (bake) > W_SPIN (bake)
+--  ROOT > BODY_POS (placement) > BODY_SIM (bake) > BODY_OFS (manual)
 -- ============================================================================
 fn CR_createRig nm fwd refNodes =
 (
 	local fwdV = CR_fwdVec fwd
-	local latV = cross fwdV [0,0,1]      -- eje de cabeceo (+ = trompa arriba)
-	local leftV = -latV                  -- izquierda del conductor
+	local latV = cross fwdV [0,0,1]      -- pitch axis (+ = nose up)
+	local leftV = -latV                  -- driver's left
 	local upm = CR_unitsPerMeter()
 	local ctr = [0,0,0], gz = 0.0
 	local wb = 2.7 * upm, track = 1.6 * upm, rad = 0.33 * upm
@@ -397,13 +397,13 @@ fn CR_createRig nm fwd refNodes =
 	local root = CR_makeDummy (nm + "_ROOT") rootPos (CR_boxSize fwdV (wb * 1.7) (track * 1.3) (rad * 0.08)) yellow lay
 	custAttributes.add root CR_CADef
 
-	local tx = Text text:"FRENTE" size:(track * 0.22) name:(nm + "_FRENTE") wirecolor:yellow
+	local tx = Text text:"FRONT" size:(track * 0.22) name:(nm + "_FRENTE") wirecolor:yellow
 	tx.pos = rootPos + fwdV * (wb * 0.95)
 	tx.parent = root
 	setUserProp tx "CR_part" 1
 	lay.addNode tx
 
-	-- CARROCERIA
+	-- BODY
 	local bPos = [ctr.x, ctr.y, gz + rad]
 	local bP = CR_makeDummy (nm + "_BODY_POS") bPos (CR_boxSize fwdV (wb * 1.25) (track * 0.95) (rad * 0.3)) orange lay
 	local bSim = CR_makeDummy (nm + "_BODY_SIM") bPos (CR_boxSize fwdV (rad * 0.6) (rad * 0.6) (rad * 0.6)) (color 180 90 0) lay
@@ -414,7 +414,7 @@ fn CR_createRig nm fwd refNodes =
 	setTransformLockFlags bSim #{1,2,3}
 	CR_linearize bSim 3 #(pitchIdx, rollIdx)
 
-	-- RUEDAS
+	-- WHEELS
 	for w = 1 to 4 do
 	(
 		local c = centers[w]
@@ -433,7 +433,7 @@ fn CR_createRig nm fwd refNodes =
 		setTransformLockFlags st #{1,2,3}
 		setTransformLockFlags sp #{1,2,3}
 
-		-- circulo de radio en el plano de la rueda (dobla, no gira)
+		-- radius circle in the wheel plane (steers, does not spin)
 		local cr = Circle radius:rad name:(base + "_RADIO") wirecolor:yellow
 		cr.transform = matrix3 fwdV [0,0,1] latV c
 		cr.parent = st
@@ -483,10 +483,10 @@ fn CR_loadRig root =
 	for w = 1 to 4 do
 		for nd in #(rd.poss[w], rd.sims[w], rd.ofss[w], rd.steers[w], rd.spins[w]) do
 			if not (isValidNode nd) do ok = false
-	if ok then rd else (messageBox "Faltan dummies del rig (se renombraron o borraron?)." title:"STM CarRig"; undefined)
+	if ok then rd else (messageBox "Rig dummies are missing (renamed or deleted?)." title:"STM CarRig"; undefined)
 )
 
--- relee posiciones de los *_POS y radios; valida el layout
+-- re-reads *_POS positions and radii; validates the layout
 fn CR_prepareRest rd =
 (
 	for w = 1 to 4 do
@@ -503,12 +503,12 @@ fn CR_prepareRest rd =
 	local rearC = (rd.rests[3] + rd.rests[4]) / 2.0
 	if (dot (frontC - rearC) fwdL) <= 0.0 do
 	(
-		messageBox "Las ruedas FL/FR tienen que quedar del lado del texto FRENTE." title:"STM CarRig"
+		messageBox "Wheels FL/FR must be on the same side as the FRONT text." title:"STM CarRig"
 		return false
 	)
 	if (dot (rd.rests[1] - rd.rests[2]) leftL) <= 0.0 or (dot (rd.rests[3] - rd.rests[4]) leftL) <= 0.0 do
 	(
-		messageBox "Izquierda/derecha invertidas: L = izquierda del conductor mirando hacia el FRENTE." title:"STM CarRig"
+		messageBox "Left/right are swapped: L = driver's left, facing the FRONT text." title:"STM CarRig"
 		return false
 	)
 	rd.wb = dot (frontC - rearC) fwdL
@@ -572,7 +572,7 @@ fn CR_clearKeys rd reset =
 )
 
 -- ============================================================================
---  Modo UBICAR: desvincula modelos y congela dummies internos
+--  PLACE mode: unlinks models and freezes internal dummies
 -- ============================================================================
 fn CR_innerNodes rd =
 (
@@ -607,7 +607,7 @@ fn CR_enterPlace rd =
 fn CR_exitPlace rd =
 (
 	if not (CR_isPlacing rd) do return true
-	-- ubicadores sin rotacion, para que los ejes queden alineados al ROOT
+	-- zero the locators' rotation so their axes stay aligned to the ROOT
 	for w = 1 to 4 do CR_zeroRot rd.poss[w]
 	CR_zeroRot rd.bodyPos
 	for nd in (CR_innerNodes rd) do nd.isFrozen = false
@@ -631,12 +631,12 @@ fn CR_exitPlace rd =
 )
 
 -- ============================================================================
---  Simulacion + bake
+--  Simulation + bake
 -- ============================================================================
 fn CR_bake rd o grounds startF endF progFn =
 (
 	local n = (endF - startF + 1) as integer
-	if n < 2 do (messageBox "Rango de frames invalido." title:"STM CarRig"; return undefined)
+	if n < 2 do (messageBox "Invalid frame range." title:"STM CarRig"; return undefined)
 
 	local dt = 1.0 / frameRate
 	local upm = CR_unitsPerMeter()
@@ -653,7 +653,7 @@ fn CR_bake rd o grounds startF endF progFn =
 	local hw = o.smoothFr as integer
 	local antic = o.anticip as integer
 
-	-- 1. muestrear el ROOT
+	-- 1. sample the ROOT
 	local TMs = #(), Ps = #(), Fs = #(), Us = #(), CAs = #()
 	for i = 1 to n do
 	(
@@ -667,7 +667,7 @@ fn CR_bake rd o grounds startF endF progFn =
 	)
 	if progFn != undefined do progFn 10
 
-	-- 2a. velocidad y yaw CENTRADOS: solo para la direccion (el conductor anticipa)
+	-- 2a. CENTERED speed and yaw: steering only (the driver anticipates)
 	local vs = #(), yaws = #()
 	for i = 1 to n do
 	(
@@ -677,13 +677,13 @@ fn CR_bake rd o grounds startF endF progFn =
 		vs[i] = (dot (Ps[ib] - Ps[ia]) Fs[i]) / (span * dt)
 		local sy = dot (cross Fs[ia] Fs[ib]) Us[i]
 		local cy = dot Fs[ia] Fs[ib]
-		yaws[i] = (atan2 sy cy) / (span * dt)      -- grados/seg
+		yaws[i] = (atan2 sy cy) / (span * dt)      -- degrees/sec
 	)
 	local vS = CR_smooth vs hw
 	local yS = CR_smooth yaws hw
 
-	-- 2b. velocidad, yaw y aceleracion CAUSALES: para la inercia de la carroceria.
-	--     Solo usan frames pasados: el auto no reacciona antes de moverse.
+	-- 2b. CAUSAL speed, yaw and acceleration: for body inertia.
+	--     Past frames only: the car never reacts before it moves.
 	local vB = #(), yB = #()
 	for i = 2 to n do
 	(
@@ -700,7 +700,7 @@ fn CR_bake rd o grounds startF endF progFn =
 	for i = 2 to n do accB[i] = (vC[i] - vC[i-1]) / dt
 	local accC = CR_smoothPast accB (hw / 2)
 
-	-- 3. direccion (modelo bicicleta)
+	-- 3. steering (bicycle model)
 	local steerRaw = #(), prevSteer = 0.0, vmin = 0.15 * upm
 	for i = 1 to n do
 	(
@@ -715,7 +715,7 @@ fn CR_bake rd o grounds startF endF progFn =
 	local steerA = for i = 1 to n collect steerRaw[amin n (i + antic)]
 	if progFn != undefined do progFn 20
 
-	-- 4. ruedas: piso + superficie + giro + direccion
+	-- 4. wheels: ground + surface + spin + steering
 	local offs = #(#(), #(), #(), #()), angs = #(#(), #(), #(), #()), stA = #(#(), #(), #(), #())
 	local ang = #(0.0, 0.0, 0.0, 0.0)
 	local prevC = #(undefined, undefined, undefined, undefined)
@@ -775,7 +775,7 @@ fn CR_bake rd o grounds startF endF progFn =
 		if progFn != undefined and (mod i 20) == 0 do progFn (20.0 + 40.0 * i / n)
 	)
 
-	-- 5. carroceria: resorte/amortiguador + inercia con tope + vibracion
+	-- 5. body: spring/damper + capped inertia + vibration
 	local bodyH = #(), bodyP = #(), bodyR = #()
 	local w0 = 2.0 * pi * o.freq
 	local zeta = o.damp
@@ -790,12 +790,12 @@ fn CR_bake rd o grounds startF endF progFn =
 		local frontA = (o1 + o2) / 2.0, rearA = (o3 + o4) / 2.0
 		local leftA = (o1 + o3) / 2.0, rightA = (o2 + o4) / 2.0
 		local latAcc = vC[i] * (yC[i] * pi / 180.0)
-		-- pose geometrica (lo que marca el piso)
+		-- geometric pose (dictated by the ground)
 		local geo = #()
 		geo[1] = (o1 + o2 + o3 + o4) / 4.0
 		geo[2] = atan2 (frontA - rearA) rd.wb
 		geo[3] = atan2 (leftA - rightA) rd.track
-		-- inercia: crece con la aceleracion y se satura suave contra el tope
+		-- inertia: grows with acceleration and saturates softly against the limit
 		local inP = (accC[i] / gU) * o.pitchG
 		local inR = (latAcc / gU) * o.rollG
 		inP = lims[2] * (CR_tanh (inP / lims[2]))
@@ -814,7 +814,7 @@ fn CR_bake rd o grounds startF endF progFn =
 					local acc = w0 * w0 * (tgt[k] - xs[k]) - 2.0 * zeta * w0 * xv[k]
 					xv[k] += acc * hs
 					xs[k] += xv[k] * hs
-					-- tope fisico: ni con el rebote pasa el maximo
+					-- hard limit: not even the rebound goes past the maximum
 					if k > 1 do
 					(
 						local dev = xs[k] - geo[k]
@@ -835,7 +835,7 @@ fn CR_bake rd o grounds startF endF progFn =
 	)
 	if progFn != undefined do progFn 65
 
-	-- 6. escribir keys (offsets sobre los *_POS)
+	-- 6. write keys (offsets on top of the *_POS)
 	CR_clearKeys rd false
 	with animate on
 	(
@@ -864,7 +864,7 @@ fn CR_bake rd o grounds startF endF progFn =
 )
 
 -- ============================================================================
---  Opciones <-> UI <-> ROOT
+--  Options <-> UI <-> ROOT
 -- ============================================================================
 fn CR_saveOpts root o =
 (
@@ -889,14 +889,14 @@ fn CR_loadOpts root =
 	o
 )
 
--- presets de suspension: frecuencia, amortiguacion, vibracion, cabeceo/g, rolido/g, tope cabeceo, tope rolido
+-- suspension presets: frequency, damping, vibration, pitch/g, roll/g, max pitch, max roll
 global CR_suspPresets = #(
-	#(2.0, 0.50, 0.25, 1.5, 2.0, 1.8, 2.5),   -- Deportiva
+	#(2.0, 0.50, 0.25, 1.5, 2.0, 1.8, 2.5),   -- Sport
 	#(1.4, 0.35, 0.15, 2.5, 3.5, 3.0, 4.0),   -- Normal
-	#(1.1, 0.28, 0.10, 3.5, 4.5, 4.0, 5.0),   -- Confort
-	#(1.2, 0.30, 0.18, 3.5, 5.5, 4.5, 6.5),   -- SUV / camioneta
-	#(1.05, 0.20, 0.30, 4.5, 6.0, 4.5, 6.5),  -- Auto 1940 (ballestas, amortiguadores de palanca)
-	#(1.6, 0.22, 0.40, 3.0, 4.5, 3.5, 5.0)    -- Camion / utilitario 1940 (ballestas duras)
+	#(1.1, 0.28, 0.10, 3.5, 4.5, 4.0, 5.0),   -- Comfort
+	#(1.2, 0.30, 0.18, 3.5, 5.5, 4.5, 6.5),   -- SUV / pickup
+	#(1.05, 0.20, 0.30, 4.5, 6.0, 4.5, 6.5),  -- 1940s car (leaf springs, lever-arm dampers)
+	#(1.6, 0.22, 0.40, 3.0, 4.5, 3.5, 5.0)    -- 1940s truck / utility (stiff leaf springs)
 )
 
 fn CR_gatherOpts =
@@ -974,7 +974,7 @@ fn CR_applySusp i =
 	)
 )
 
--- si no hay rig activo, intenta tomar el ROOT seleccionado
+-- if there is no active rig, try to use the selected ROOT
 fn CR_tryAutoLoad =
 (
 	if (CR_currentRig == undefined or not (isValidNode CR_currentRig.root)) and selection.count == 1 do
@@ -994,7 +994,7 @@ fn CR_hasRig =
 	if CR_tryAutoLoad() then true
 	else
 	(
-		messageBox "Crea un rig, o selecciona el ROOT de uno existente." title:"STM CarRig"
+		messageBox "Create a rig, or select the ROOT of an existing one." title:"STM CarRig"
 		false
 	)
 )
@@ -1004,27 +1004,27 @@ fn CR_hasRig =
 -- ============================================================================
 rollout CR_roRig "1 - RIG"
 (
-	edittext etName "Nombre:" text:"Car01" fieldWidth:160 align:#left
-	dropdownlist ddFwd "Frente del auto apunta a:" items:#("+Y", "-Y", "+X", "-X") selection:2 width:222
-	button btCreate "CREAR RIG" width:222 height:32 \
-		tooltip:"Crea el rig de dummies. Si el auto esta seleccionado, los dummies se crean a su tamano. Sin seleccion (o con solo dummies seleccionados) usa medidas estandar."
-	checkbutton ckPlace "UBICAR DUMMIES" width:222 height:28 highlightColor:(color 230 140 30) \
-		tooltip:"Desvincula tus modelos y deja mover solo el ROOT, los *_POS naranjas y los circulos de radio (Radius = radio de la cubierta). Al apagarlo, o al simular, se re-linkea todo."
-	button btSelPos "Seleccionar ubicadores" width:222 \
-		tooltip:"Selecciona ROOT, BODY_POS, los 4 W??_POS y los circulos de radio."
+	edittext etName "Name:" text:"Car01" fieldWidth:160 align:#left
+	dropdownlist ddFwd "Car front points to:" items:#("+Y", "-Y", "+X", "-X") selection:2 width:222
+	button btCreate "CREATE RIG" width:222 height:32 \
+		tooltip:"Builds the dummy rig. If the car is selected, the dummies are sized to fit it. With nothing selected (or only dummies) it uses standard car dimensions."
+	checkbutton ckPlace "PLACE DUMMIES" width:222 height:28 highlightColor:(color 230 140 30) \
+		tooltip:"Unlinks your models so only the ROOT, the orange *_POS and the radius circles (Radius = tire radius) can be moved. Turning it off, or simulating, relinks everything."
+	button btSelPos "Select locators" width:222 \
+		tooltip:"Selects ROOT, BODY_POS, the 4 W??_POS and the radius circles."
 
-	group "Linkear seleccion a"
+	group "Link selection to"
 	(
-		button btFL "FL" width:49 across:4 tooltip:"Rueda delantera izquierda -> WFL_SPIN"
-		button btFR "FR" width:49 tooltip:"Rueda delantera derecha -> WFR_SPIN"
-		button btRL "RL" width:49 tooltip:"Rueda trasera izquierda -> WRL_SPIN"
-		button btRR "RR" width:49 tooltip:"Rueda trasera derecha -> WRR_SPIN"
-		button btLBody "Carroceria" width:102 across:2 tooltip:"Carroceria y todo lo que va con ella -> BODY_OFS"
-		button btLCal "Calipers" width:102 tooltip:"Cada caliper -> STEER de la rueda mas cercana (doblan, no giran)"
+		button btFL "FL" width:49 across:4 tooltip:"Front left wheel -> WFL_SPIN"
+		button btFR "FR" width:49 tooltip:"Front right wheel -> WFR_SPIN"
+		button btRL "RL" width:49 tooltip:"Rear left wheel -> WRL_SPIN"
+		button btRR "RR" width:49 tooltip:"Rear right wheel -> WRR_SPIN"
+		button btLBody "Body" width:102 across:2 tooltip:"Body and everything that moves with it -> BODY_OFS"
+		button btLCal "Calipers" width:102 tooltip:"Each caliper -> STEER of the nearest wheel (they steer, not spin)"
 	)
 
-	button btLoad "Cargar rig seleccionado" width:222 tooltip:"Selecciona el ROOT de un rig existente y apreta aca."
-	label lbRig "Sin rig activo" width:222
+	button btLoad "Load selected rig" width:222 tooltip:"Select the ROOT of an existing rig and click here."
+	label lbRig "No active rig" width:222
 
 	fn syncPlace =
 	(
@@ -1034,21 +1034,21 @@ rollout CR_roRig "1 - RIG"
 	fn setRig rd =
 	(
 		CR_currentRig = rd
-		lbRig.text = if rd == undefined then "Sin rig activo" else ("Rig activo:  " + rd.name)
+		lbRig.text = if rd == undefined then "No active rig" else ("Active rig:  " + rd.name)
 		syncPlace()
 	)
 
 	fn needRigSel =
 	(
-		if selection.count == 0 then (messageBox "Selecciona las piezas a linkear." title:"STM CarRig"; false)
+		if selection.count == 0 then (messageBox "Select the parts to link." title:"STM CarRig"; false)
 		else if CR_currentRig == undefined or not (isValidNode CR_currentRig.root) then
 		(
-			messageBox "Primero crea o carga un rig." title:"STM CarRig"
+			messageBox "Create or load a rig first." title:"STM CarRig"
 			false
 		)
 		else
 		(
-			-- linkear siempre fuera del modo ubicar y en reposo
+			-- always link outside place mode and at rest pose
 			if CR_isPlacing CR_currentRig do CR_exitPlace CR_currentRig
 			CR_clearKeys CR_currentRig true
 			syncPlace()
@@ -1068,10 +1068,10 @@ rollout CR_roRig "1 - RIG"
 	(
 		local nm = substituteString etName.text " " "_"
 		if (getNodeByName (nm + "_ROOT")) != undefined then
-			messageBox ("Ya existe un rig llamado " + nm + ". Cambia el nombre.") title:"STM CarRig"
+			messageBox ("A rig named " + nm + " already exists. Pick another name.") title:"STM CarRig"
 		else
 		(
-			-- medir solo el modelo: ignorar dummies de rigs existentes
+			-- measure the model only: ignore dummies from existing rigs
 			local refs = for s in selection where not (CR_isPart s) collect s
 			local root
 			undo "STM CarRig Create" on (root = CR_createRig nm ddFwd.selection refs)
@@ -1094,7 +1094,7 @@ rollout CR_roRig "1 - RIG"
 			)
 			if state do
 			(
-				CR_roSim.lbInfo.text = "Simulacion borrada: ubica los dummies"
+				CR_roSim.lbInfo.text = "Simulation cleared: place the dummies"
 				select (#(CR_currentRig.root, CR_currentRig.bodyPos) + CR_currentRig.poss)
 			)
 			redrawViews()
@@ -1147,11 +1147,11 @@ rollout CR_roRig "1 - RIG"
 
 	on btLoad pressed do
 	(
-		if selection.count != 1 then messageBox "Selecciona solo el ROOT del rig." title:"STM CarRig"
+		if selection.count != 1 then messageBox "Select only the rig ROOT." title:"STM CarRig"
 		else
 		(
 			local rd = CR_loadRig selection[1]
-			if rd == undefined then messageBox "Eso no es un ROOT de CarRig (v1.2 o posterior)." title:"STM CarRig"
+			if rd == undefined then messageBox "That is not a CarRig ROOT (v1.2 or later)." title:"STM CarRig"
 			else
 			(
 				setRig rd
@@ -1161,40 +1161,40 @@ rollout CR_roRig "1 - RIG"
 	)
 )
 
-rollout CR_roDrive "2 - MANEJO"
+rollout CR_roDrive "2 - DRIVE"
 (
-	group "Recorrido (opcional)"
+	group "Path (optional)"
 	(
-		pickbutton pbPath "Elegir spline..." width:208 filter:CR_shapeFilt \
-			tooltip:"Spline por donde va el auto. Tambien podes animar el ROOT a mano."
-		checkbox cbConst "Velocidad constante" across:2 align:#left offset:[0,3] \
-			tooltip:"Sin tildar: arranca y frena suave (keys de Percent editables)."
-		button btAttach "Asignar" width:70 align:#right \
-			tooltip:"Asigna el ROOT a la spline, en el rango de frames de SIMULAR."
+		pickbutton pbPath "Pick spline..." width:208 filter:CR_shapeFilt \
+			tooltip:"Spline the car drives along. You can also animate the ROOT by hand."
+		checkbox cbConst "Constant speed" across:2 align:#left offset:[0,3] \
+			tooltip:"Unchecked: eases in and out (editable Percent keys)."
+		button btAttach "Assign" width:70 align:#right \
+			tooltip:"Constrains the ROOT to the spline over the SIMULATE frame range."
 	)
 
-	group "Camino"
+	group "Road"
 	(
-		dropdownlist ddPreset "Superficie:" width:208 selection:3 \
-			items:#("Asfalto liso", "Asfalto gastado", "Empedrado / adoquines", "Ripio", "Camino de tierra", "Off-road", "Adoquin antiguo (gastado)", "Empedrado piedra bola")
-		spinner spAmp "Intensidad:" range:[0,20,1] type:#float fieldwidth:50 align:#right \
-			tooltip:"Multiplica la altura de la superficie. Animable desde el ROOT (Superficie)."
-		button btGAdd "Piso  <-  seleccion" width:138 across:2 align:#left \
-			tooltip:"Terreno, rampas, cordones: las ruedas los siguen."
-		button btGClr "Quitar" width:66 align:#right
-		label lbG "Piso: plano del ROOT" width:208 align:#left
+		dropdownlist ddPreset "Surface:" width:208 selection:3 \
+			items:#("Smooth asphalt", "Worn asphalt", "Cobblestones / pavers", "Gravel", "Dirt road", "Off-road", "Old pavers (worn)", "Round fieldstone")
+		spinner spAmp "Intensity:" range:[0,20,1] type:#float fieldwidth:50 align:#right \
+			tooltip:"Multiplies the surface height. Animatable on the ROOT (Surface)."
+		button btGAdd "Ground  <-  selection" width:138 across:2 align:#left \
+			tooltip:"Terrain, ramps, curbs: the wheels follow them."
+		button btGClr "Clear" width:66 align:#right
+		label lbG "Ground: ROOT plane" width:208 align:#left
 	)
 
 	group "Suspension"
 	(
-		dropdownlist ddChar "Caracter:" width:208 selection:2 \
-			items:#("Deportiva", "Normal", "Confort", "SUV / camioneta", "Auto 1940 (ballestas)", "Camion / utilitario 1940", "Personalizada")
+		dropdownlist ddChar "Character:" width:208 selection:2 \
+			items:#("Sport", "Normal", "Comfort", "SUV / pickup", "1940s car (leaf springs)", "1940s truck / utility", "Custom")
 	)
 
 	fn updG =
 	(
-		lbG.text = if CR_grounds.count == 0 then "Piso: plano del ROOT" \
-			else ("Piso: " + (CR_grounds.count as string) + " objeto(s)")
+		lbG.text = if CR_grounds.count == 0 then "Ground: ROOT plane" \
+			else ("Ground: " + (CR_grounds.count as string) + " object(s)")
 	)
 
 	on ddChar selected i do CR_applySusp i
@@ -1203,7 +1203,7 @@ rollout CR_roDrive "2 - MANEJO"
 
 	on btAttach pressed do
 	(
-		if not (isValidNode CR_path) then messageBox "Primero elegi una spline." title:"STM CarRig"
+		if not (isValidNode CR_path) then messageBox "Pick a spline first." title:"STM CarRig"
 		else if CR_hasRig() do
 			undo "STM CarRig Path" on (CR_attachPath CR_currentRig CR_path cbConst.checked CR_roSim.spS.value CR_roSim.spE.value)
 	)
@@ -1216,15 +1216,15 @@ rollout CR_roDrive "2 - MANEJO"
 	on btGClr pressed do (CR_grounds = #(); updG())
 )
 
-rollout CR_roSim "3 - SIMULAR"
+rollout CR_roSim "3 - SIMULATE"
 (
-	spinner spS "Desde:" type:#integer range:[-100000,100000,0] fieldwidth:45 across:2 align:#left
-	spinner spE "Hasta:" type:#integer range:[-100000,100000,100] fieldwidth:45 align:#right
-	button btBake "SIMULAR" width:222 height:40 \
-		tooltip:"Relee la posicion de los dummies y calcula ruedas, direccion y carroceria."
+	spinner spS "From:" type:#integer range:[-100000,100000,0] fieldwidth:45 across:2 align:#left
+	spinner spE "To:" type:#integer range:[-100000,100000,100] fieldwidth:45 align:#right
+	button btBake "SIMULATE" width:222 height:40 \
+		tooltip:"Re-reads the dummy positions and computes wheels, steering and body."
 	progressbar pb color:(color 230 140 30) height:8 width:222
 	label lbInfo "" width:222
-	button btClear "Borrar simulacion" width:222
+	button btClear "Clear simulation" width:222
 
 	on CR_roSim open do
 	(
@@ -1236,7 +1236,7 @@ rollout CR_roSim "3 - SIMULAR"
 	(
 		if CR_hasRig() do
 		(
-			-- salir del modo ubicar (re-linkea modelos en reposo)
+			-- exit place mode (relinks models at rest pose)
 			if CR_isPlacing CR_currentRig do
 			(
 				undo off (CR_exitPlace CR_currentRig)
@@ -1249,11 +1249,11 @@ rollout CR_roSim "3 - SIMULAR"
 				local grounds = for g in CR_grounds where isValidNode g collect g
 				local t0 = timeStamp()
 				local res
-				lbInfo.text = "Simulando..."
+				lbInfo.text = "Simulating..."
 				undo off (with redraw off (res = CR_bake CR_currentRig o grounds spS.value spE.value CR_progress))
 				pb.value = 0
 				if res != undefined do
-					lbInfo.text = "Listo en " + (formattedPrint ((timeStamp() - t0) / 1000.0) format:".1f") + "s   |   Vel. max " + (formattedPrint res[1] format:".0f") + " km/h"
+					lbInfo.text = "Done in " + (formattedPrint ((timeStamp() - t0) / 1000.0) format:".1f") + "s   |   Max speed " + (formattedPrint res[1] format:".0f") + " km/h"
 				redrawViews()
 			)
 		)
@@ -1264,53 +1264,53 @@ rollout CR_roSim "3 - SIMULAR"
 		if CR_hasRig() do
 		(
 			CR_clearKeys CR_currentRig true
-			lbInfo.text = "Simulacion borrada"
+			lbInfo.text = "Simulation cleared"
 			redrawViews()
 		)
 	)
 )
 
-rollout CR_roAdv "Ajustes avanzados"
+rollout CR_roAdv "Advanced Settings"
 (
 	group "Suspension"
 	(
-		spinner spFreq "Frecuencia (Hz):" range:[0.3,6,1.4] type:#float fieldwidth:50 \
-			tooltip:"Rigidez: mas alto = mas firme y rapida."
-		spinner spDamp "Amortiguacion:" range:[0.05,2,0.35] type:#float fieldwidth:50 \
-			tooltip:"Mas bajo = rebota mas antes de asentarse."
-		spinner spVib "Vibracion:" range:[0,1,0.15] type:#float fieldwidth:50 \
-			tooltip:"Cuanto del temblor del piso pasa directo a la carroceria."
-		spinner spPitchG "Cabeceo (grados/g):" range:[0,20,2.5] type:#float fieldwidth:50 \
-			tooltip:"Sensibilidad: cuanto se hunde la trompa al frenar / sube al acelerar, antes de llegar al tope."
-		spinner spRollG "Rolido (grados/g):" range:[0,20,3.5] type:#float fieldwidth:50 \
-			tooltip:"Cuanto se inclina en las curvas."
-		spinner spMaxP "Tope cabeceo (grados):" range:[0.1,20,3.0] type:#float fieldwidth:50 \
-			tooltip:"Maximo que se hunde o levanta la trompa por frenadas y arranques, por mas brusco que sea."
-		spinner spMaxR "Tope rolido (grados):" range:[0.1,20,4.0] type:#float fieldwidth:50 \
-			tooltip:"Maximo que se inclina en curvas."
+		spinner spFreq "Frequency (Hz):" range:[0.3,6,1.4] type:#float fieldwidth:50 \
+			tooltip:"Stiffness: higher = firmer and faster."
+		spinner spDamp "Damping:" range:[0.05,2,0.35] type:#float fieldwidth:50 \
+			tooltip:"Lower = bounces more before settling."
+		spinner spVib "Vibration:" range:[0,1,0.15] type:#float fieldwidth:50 \
+			tooltip:"How much road shake passes straight to the body."
+		spinner spPitchG "Pitch (deg/g):" range:[0,20,2.5] type:#float fieldwidth:50 \
+			tooltip:"Sensitivity: how much the nose dives when braking / lifts when accelerating, before hitting the limit."
+		spinner spRollG "Roll (deg/g):" range:[0,20,3.5] type:#float fieldwidth:50 \
+			tooltip:"How much the body leans in turns."
+		spinner spMaxP "Max pitch (deg):" range:[0.1,20,3.0] type:#float fieldwidth:50 \
+			tooltip:"Maximum nose dive or lift from braking and launches, no matter how harsh."
+		spinner spMaxR "Max roll (deg):" range:[0.1,20,4.0] type:#float fieldwidth:50 \
+			tooltip:"Maximum body lean in turns."
 	)
-	group "Superficie"
+	group "Surface"
 	(
-		spinner spScale "Tamano (x):" range:[0.05,20,1] type:#float fieldwidth:50 \
-			tooltip:"1.0 = tamano real (adoquin 20-22 x 12 cm, piedra bola ~16 cm). 1.3 = piedras 30% mas grandes. No depende de las unidades de la escena."
+		spinner spScale "Scale (x):" range:[0.05,20,1] type:#float fieldwidth:50 \
+			tooltip:"1.0 = real size (pavers 20-22 x 12 cm, fieldstones ~16 cm). 1.3 = stones 30% bigger. Independent of scene units."
 		spinner spSeed "Seed:" range:[0,9999,1] type:#integer fieldwidth:50
-		checkbox cbEnv "Envolvente del neumatico" checked:true \
-			tooltip:"La cubierta puentea las juntas chicas en vez de meterse en cada hueco."
+		checkbox cbEnv "Tire envelope" checked:true \
+			tooltip:"The tire bridges small gaps instead of dropping into every hole."
 	)
-	group "Direccion"
+	group "Steering"
 	(
-		checkbox cbAuto "Automatica" checked:true across:2
+		checkbox cbAuto "Automatic" checked:true across:2
 		checkbox cbAck "Ackermann" checked:true
-		spinner spMax "Giro max (grados):" range:[1,70,35] type:#float fieldwidth:50
-		spinner spSmooth "Suavizado (frames):" range:[0,30,4] type:#integer fieldwidth:50 \
-			tooltip:"Tambien define cuanto tarda la carroceria en reaccionar."
-		spinner spAnt "Anticipacion (frames):" range:[0,30,2] type:#integer fieldwidth:50 \
-			tooltip:"Cuantos frames antes de la curva empieza a doblar el volante."
+		spinner spMax "Max steer (deg):" range:[1,70,35] type:#float fieldwidth:50
+		spinner spSmooth "Smoothing (frames):" range:[0,30,4] type:#integer fieldwidth:50 \
+			tooltip:"Also sets how long the body takes to react."
+		spinner spAnt "Anticipation (frames):" range:[0,30,2] type:#integer fieldwidth:50 \
+			tooltip:"How many frames before a turn the steering starts."
 	)
-	group "Ejes"
+	group "Axes"
 	(
-		checkbox cbInvSpin "Invertir giro" across:2 tooltip:"Si las ruedas giran al reves"
-		checkbox cbInvSteer "Invertir direccion" tooltip:"Si doblan para el lado contrario"
+		checkbox cbInvSpin "Invert spin" across:2 tooltip:"If the wheels spin backwards"
+		checkbox cbInvSteer "Invert steering" tooltip:"If they steer the wrong way"
 	)
 
 	fn markCustom = (try (CR_roDrive.ddChar.selection = CR_suspPresets.count + 1) catch ())

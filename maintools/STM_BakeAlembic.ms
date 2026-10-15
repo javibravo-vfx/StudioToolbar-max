@@ -5,7 +5,7 @@ Description:
     Bakes an Alembic camera object into a native Free Camera
     with keyframed transform and FOV over the full animation range.
     Select the Alembic object first, then run.
-    Llamado via rt.fileIn() desde StudioToolbar-max.
+    Run via rt.fileIn() from StudioToolbar-max.
 */
 
 fn STM_BakeAlembic =

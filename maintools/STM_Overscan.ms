@@ -5,7 +5,7 @@ Description:
     Overscan tool — adds overscan pixels around the current render resolution.
     Inspired by Overscan 0.26 by Martin Breidt (martin@breidt.net)
     http://scripts.breidt.net
-    Llamado via rt.fileIn() desde StudioToolbar-max.
+    Run via rt.fileIn() from StudioToolbar-max.
 */
 
 try(destroyDialog _roOverScan)catch()

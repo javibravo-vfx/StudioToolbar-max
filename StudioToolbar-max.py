@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.6.2"
+VERSION = "2.6.3"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -42,7 +42,7 @@ PATH_BAKE_CAM    = r"T:\.studio-toolbar\max\maintools\STM_BakeAlembic.ms"
 PATH_LIBRARY     = r"T:\.studio-toolbar\max\maintools\STM_StudioLibraryMAX.py"
 PATH_TOOLS_DIR   = r"T:\.studio-toolbar\max\tools"
 
-# Slot de AppData en rootNode donde Set Paths guarda los paths dentro del .max
+# rootNode AppData slot where Set Paths stores the paths inside the .max
 STM_APPDATA_PATHS = 731101
 
 # ── Pipeline structure ────────────────────────────────────────────────────────
@@ -138,8 +138,8 @@ PIPELINE_DEFAULTS = {
 _CFG_CACHE = {"mtime": None, "data": None}
 
 def load_pipeline_cfg():
-    """Carga pipeline_config.ini (merge con defaults). Cacheado: solo relee
-    el archivo si cambió en disco — _master_sync lo consulta cada 500 ms."""
+    """Load pipeline_config.ini (merged with defaults). Cached: only re-reads
+    the file if it changed on disk — _master_sync polls it every 500 ms."""
     try:    mtime = os.path.getmtime(PIPELINE_CFG)
     except OSError: mtime = None
     if _CFG_CACHE["data"] is not None and _CFG_CACHE["mtime"] == mtime:
@@ -161,18 +161,18 @@ def save_pipeline_cfg(data):
             json.dump(data, f, indent=2)
     except Exception as e:
         print(f"[STM] pipeline_config write error: {e}")
-    _CFG_CACHE["data"] = None   # forzar relectura
+    _CFG_CACHE["data"] = None   # force re-read
 
 def _cfg():
-    """Shortcut para obtener la config activa."""
+    """Shortcut to get the active config."""
     return load_pipeline_cfg()
 
-# Derivados de config — se recalculan en runtime desde _cfg()
+# Derived from config — recomputed at runtime from _cfg()
 def get_tasks_template():
     return [t.strip() for t in _cfg()["tasks"].split(",") if t.strip()]
 
 def get_subfolders():
-    """Devuelve lista ordenada de todas las subcarpetas de task."""
+    """Return the ordered list of all task subfolders."""
     c = _cfg()
     subs = []
     for key in ["sub_projects", "sub_review", "sub_publish"]:
@@ -187,8 +187,8 @@ def get_seq_exclude():
 
 def get_task_projects_subs(task_name):
     """
-    Devuelve la lista de subcarpetas a crear dentro de projects/ para una task.
-    Si la task no tiene config específica, devuelve ["textures"] por default.
+    Return the list of subfolders to create inside projects/ for a task.
+    If the task has no specific config, returns ["textures"] by default.
     """
     raw = _cfg().get("task_projects_subs", "")
     if raw:
@@ -199,11 +199,11 @@ def get_task_projects_subs(task_name):
         except: pass
     return ["textures"]
 
-# Mantener compatibilidad con código que usa las constantes directamente
+# Keep compatibility with code that uses the constants directly
 TASKS_TEMPLATE      = ["1_matchmove","2_model","3_retopo","4_rigging","5_shaders","6_animation","7_fx","8_lighting"]
 SUBFOLDERS_TEMPLATE = {"projects":"1_projects","review":"2_review","publish":"3_publish"}
 
-# ── Built-in presets (aparecen debajo de los presets guardados por el usuario) ──
+# ── Built-in presets (listed below the user's saved presets) ────────────────────
 BUILTIN_RES = [
     ("HD",              1920, 1080), ("HD 720",          1280,  720),
     ("UHD 4K",          3840, 2160), ("DCI 2K",          2048, 1080),
@@ -211,7 +211,7 @@ BUILTIN_RES = [
     ("Square 1:1",      1080, 1080), ("Vertical 9:16",   1080, 1920),
     ("Social 4:5",      1080, 1350),
 ]
-# Ancho de sensor (mm) del modo de grabación más usado de cada cámara
+# Sensor width (mm) of each camera's most common recording mode
 BUILTIN_FILM = [
     ("3ds Max default / Full Frame",       36.00),
     ("ARRI Alexa 35 — Open Gate",          27.99),
@@ -226,7 +226,7 @@ BUILTIN_FILM = [
     ("APS-C (Canon)",                      22.30),
 ]
 
-# ── Paleta ────────────────────────────────────────────────────────────────────
+# ── Palette ───────────────────────────────────────────────────────────────────
 MX_BG        = "#3c3c3c"
 MX_BG_BTN    = "#3c3c3c"
 MX_BG_BTN_HO = "#505050"
@@ -241,7 +241,7 @@ MX_SEL_BG    = "#4a6a8a"
 
 IC_BASE    = "#b8b8b8"
 IC_ACCENT  = "#4ec9c9"   # cyan
-IC_ACCENT2 = "#d4b44a"   # amarillo
+IC_ACCENT2 = "#d4b44a"   # yellow
 IC_HOVER   = "#ffffff"
 
 LIB_BG     = "#1e1e1e"
@@ -254,14 +254,14 @@ FONT_MAIN  = "9pt"
 FONT_LABEL = "8.5pt"
 FONT_SMALL = "8pt"
 
-# Dimensiones tool buttons — cuadrados, iconos grandes
-TOOL_SZ = 40     # ancho y alto del botón
-ICON_SZ = 28     # tamaño del SVG
-H       = 22     # altura estándar de inputs/combos/botones normales
+# Tool button dimensions — square, large icons
+TOOL_SZ = 40     # button width and height
+ICON_SZ = 28     # SVG size
+H       = 22     # standard height of inputs/combos/regular buttons
 
-# ── Flechas de combos/spinners como SVG en disco ──────────────────────────────
-# Los triángulos hechos con bordes CSS se ven como una barra "=" en Qt;
-# los stylesheets necesitan un archivo para image: url(...), así que se escriben una vez.
+# ── Combo/spinner arrows as SVG files on disk ─────────────────────────────────
+# Triangles made from CSS borders render as an "=" bar in Qt;
+# stylesheets need a file for image: url(...), so they are written once.
 STYLE_ICON_DIR = os.path.join(PIPE_DIR, "icons")
 
 def _ensure_style_icons():
@@ -296,7 +296,7 @@ QWidget {{
     font-size: {FONT_MAIN};
 }}
 
-/* ── inputs — NUNCA se estiran, siempre fixed ────────── */
+/* ── inputs — never stretch, always fixed ───────────── */
 QComboBox, QLineEdit, QDoubleSpinBox, QSpinBox {{
     background-color: {MX_BG_INPUT};
     color: {MX_TEXT};
@@ -329,7 +329,7 @@ QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{ background
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({_icon_url("arrow_up")}); width: 10px; height: 10px; }}
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({_icon_url("arrow_down")}); width: 10px; height: 10px; }}
 
-/* ── botón base — fixed, no stretch ─────────────────── */
+/* ── base button — fixed, no stretch ──────────────── */
 QPushButton {{
     background-color: {MX_BG_BTN};
     color: {MX_TEXT};
@@ -367,7 +367,7 @@ QPushButton#action_btn {{
 QPushButton#action_btn:hover {{ background-color: {MX_BG_BTN_HO}; border-color: {MX_BORDER_HI}; }}
 QPushButton#action_btn:pressed {{ background-color: {MX_BG_BTN_PR}; }}
 
-/* ── reset — tint rojizo sutil ────────────────────────── */
+/* ── reset — subtle red tint ──────────────────────────── */
 QPushButton#reset_btn {{
     background-color: #3a2e2e;
     color: #c08080;
@@ -420,7 +420,7 @@ QLabel#version_lbl {{ color: #606060; font-size: {FONT_SMALL}; }}
 
 /* ── section stretch labels ───────────────────────────── */
 QLabel#stretch_lbl {{
-    color: transparent;       /* invisible pero ocupa espacio */
+    color: transparent;       /* invisible but takes up space */
     background: transparent;
     font-size: 1pt;
 }}
@@ -469,7 +469,7 @@ QToolButton#action_btn::menu-button {{
 QToolButton#action_btn::menu-button:hover {{ background-color: #5c5c5c; }}
 QToolButton#action_btn::menu-arrow {{ image: url({_icon_url("arrow_down")}); width: 9px; height: 9px; }}
 
-/* ── GET resaltado: el archivo abierto está en otro shot/task ── */
+/* ── GET highlighted: open file belongs to another shot/task ── */
 QPushButton#action_btn[attention="true"] {{
     color: #f0c060; border-color: #a07a2a; background-color: #4a4232;
 }}
@@ -565,7 +565,7 @@ def _svg_library(base, accent):
 </svg>"""
 
 def _svg_snap(base, accent):
-    """Cámara de snapshot — cuerpo + lente + destellito."""
+    """Snapshot camera — body + lens + little flash."""
     return f"""<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
   <rect x="2" y="6" width="20" height="14" rx="2" fill="none" stroke="{base}" stroke-width="1.4"/>
   <path d="M8,6 L9.5,3 L14.5,3 L16,6" fill="none" stroke="{base}" stroke-width="1.3"/>
@@ -575,7 +575,7 @@ def _svg_snap(base, accent):
 </svg>"""
 
 
-# ── Mini icons (16×16 viewBox) para botones chicos — reemplazan letras S/L/D/H ──
+# ── Mini icons (16×16 viewBox) for small buttons — replace the S/L/D/H letters ──
 def _mi(body, c):
     return (f'<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="none" '
             f'stroke="{c}" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">{body}</svg>')
@@ -595,7 +595,7 @@ MINI_ICONS = {
 }
 
 def _mini_icon(name, color=None, color_hover=None, size=16):
-    """QIcon nítido (2x) para botones chicos; estados Normal / Active(hover) / On(checked)."""
+    """Crisp (2x) QIcon for small buttons; Normal / Active(hover) / On(checked) states."""
     icon = QtGui.QIcon()
     for mode, col in ((QtGui.QIcon.Normal, color or IC_BASE),
                       (QtGui.QIcon.Active, color_hover or IC_HOVER),
@@ -628,7 +628,7 @@ def _svg_to_pixmap(svg_str, size=ICON_SZ):
 
 
 def _svg_to_pixmap_rect(svg_str, w, h):
-    """Renderiza SVG a un QPixmap de dimensiones arbitrarias."""
+    """Render an SVG to a QPixmap of arbitrary size."""
     renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(svg_str.encode()))
     pix = QtGui.QPixmap(w, h)
     pix.fill(QtCore.Qt.transparent)
@@ -639,7 +639,7 @@ def _svg_to_pixmap_rect(svg_str, w, h):
 
 
 def _svg_x2(color):
-    """Icono ×2 — símbolo de multiplicación + número 2 grande y claro."""
+    """×2 icon — multiplication sign + a large, clear number 2."""
     return f"""<svg viewBox="0 0 34 22" xmlns="http://www.w3.org/2000/svg">
   <line x1="3" y1="5"  x2="10" y2="14" stroke="{color}" stroke-width="1.8" stroke-linecap="round"/>
   <line x1="10" y1="5" x2="3"  y2="14" stroke="{color}" stroke-width="1.8" stroke-linecap="round"/>
@@ -649,7 +649,7 @@ def _svg_x2(color):
 
 
 def _svg_div2(color):
-    """Icono /2 — barra diagonal + número 2."""
+    """/2 icon — slash + number 2."""
     return f"""<svg viewBox="0 0 34 22" xmlns="http://www.w3.org/2000/svg">
   <line x1="10" y1="17" x2="17" y2="5" stroke="{color}" stroke-width="1.8" stroke-linecap="round"/>
   <path d="M21,6 L28,6 Q31,6 31,9 Q31,12 26,14 L21,17 L31,17"
@@ -658,7 +658,7 @@ def _svg_div2(color):
 
 
 class SvgLabelButton(QtWidgets.QPushButton):
-    """Botón pequeño con icono SVG rectangular (no cuadrado), para X2 / /2."""
+    """Small button with a rectangular (non-square) SVG icon, for X2 / /2."""
     def __init__(self, svg_fn, w, h, tooltip="", parent=None):
         super().__init__(parent)
         self._svg_fn  = svg_fn
@@ -687,7 +687,7 @@ class SvgLabelButton(QtWidgets.QPushButton):
         p.end()
 
 
-# ── IconToolButton — cuadrado, solo icono, sin overlay de texto ───────────────
+# ── IconToolButton — square, icon only, no text overlay ───────────────────────
 class IconToolButton(QtWidgets.QPushButton):
     def __init__(self, svg_fn, bg=MX_BG, bg_hover=MX_BG_BTN_HO,
                  base_color=IC_BASE, accent_color=IC_ACCENT, parent=None):
@@ -699,7 +699,7 @@ class IconToolButton(QtWidgets.QPushButton):
 
         self.setFixedSize(TOOL_SZ, TOOL_SZ)
         self.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        # Sin setFlat — usamos paintEvent propio
+        # No setFlat — we use our own paintEvent
         self.setFlat(True)
 
         self._pix_normal = _svg_to_pixmap(svg_fn(base_color, accent_color))
@@ -738,7 +738,7 @@ VP_COLOR_PRESETS_DEFAULT = [
 VP_COLOR_CFG_KEY = "vp_color_presets"
 
 def _get_vp_color_presets():
-    """Lee presets desde pipeline_config.ini, o devuelve los defaults."""
+    """Read presets from pipeline_config.ini, or return the defaults."""
     cfg = load_pipeline_cfg()
     raw = cfg.get(VP_COLOR_CFG_KEY)
     if raw:
@@ -749,13 +749,13 @@ def _get_vp_color_presets():
     return list(VP_COLOR_PRESETS_DEFAULT)
 
 def _save_vp_color_presets(presets):
-    """Guarda presets en pipeline_config.ini."""
+    """Save presets to pipeline_config.ini."""
     cfg = load_pipeline_cfg()
     cfg[VP_COLOR_CFG_KEY] = json.dumps(presets)
     save_pipeline_cfg(cfg)
 
 def _hex_to_maxpoint3(hex_color):
-    """Convierte #rrggbb a Point3 normalizado (0-1) para SetUIColor."""
+    """Convert #rrggbb to a normalized (0-1) Point3 for SetUIColor."""
     h = hex_color.lstrip("#")
     r = int(h[0:2], 16) / 255.0
     g = int(h[2:4], 16) / 255.0
@@ -763,8 +763,8 @@ def _hex_to_maxpoint3(hex_color):
     return r, g, b
 
 def _get_current_vp_hex():
-    """Lee el color actual del viewport desde Max y devuelve #rrggbb.
-    Solid: índice 41. Gradient: bottom (el color más representativo visualmente)."""
+    """Read the current viewport color from Max and return #rrggbb.
+    Solid: index 41. Gradient: bottom (the most visually representative color)."""
     try:
         is_solid = rt.viewport.IsSolidBackgroundColorMode()
         if is_solid:
@@ -779,14 +779,14 @@ def _get_current_vp_hex():
         return "#383838"
 
 def _is_solid_mode():
-    """True si el viewport activo está en modo solid."""
+    """True if the active viewport is in solid mode."""
     try:
         return bool(rt.viewport.IsSolidBackgroundColorMode())
     except Exception:
         return True
 
 def _restore_vp_originals(orig_hex, orig_grad_top, orig_grad_bot):
-    """Restaura exactamente los colores que había antes de abrir el manager."""
+    """Restore exactly the colors that were set before the manager was opened."""
     try:
         r, g, b = _hex_to_maxpoint3(orig_hex)
         rt.execute(f"SetUIColor 41 (point3 {r:.6f} {g:.6f} {b:.6f})")
@@ -802,16 +802,16 @@ def _restore_vp_originals(orig_hex, orig_grad_top, orig_grad_bot):
         print(f"[STM Restore] {e}")
 
 def _apply_vp_color(hex_color):
-    """Aplica un color al viewport background via MAXScript.
-    Mantiene la proporcion original de 3ds Max:
-      solid = color elegido
-      bottom = color + 21/255  (mas claro, como 77 respecto a 56)
-      top    = color - 30/255  (mas oscuro, como 26 respecto a 56)
+    """Apply a color to the viewport background via MAXScript.
+    Keeps the original 3ds Max proportions:
+      solid = chosen color
+      bottom = color + 21/255  (lighter, like 77 vs 56)
+      top    = color - 30/255  (darker, like 26 vs 56)
     """
     try:
         r, g, b = _hex_to_maxpoint3(hex_color)
-        OFFSET_BOT =  21 / 255.0   # +21 niveles como el default de Max
-        OFFSET_TOP = -30 / 255.0   # -30 niveles como el default de Max
+        OFFSET_BOT =  21 / 255.0   # +21 levels like the Max default
+        OFFSET_TOP = -30 / 255.0   # -30 levels like the Max default
         rb = min(1.0, max(0.0, r + OFFSET_BOT))
         gb = min(1.0, max(0.0, g + OFFSET_BOT))
         bb = min(1.0, max(0.0, b + OFFSET_BOT))
@@ -829,17 +829,17 @@ def _apply_vp_color(hex_color):
 
 class ViewportColorButton(QtWidgets.QPushButton):
     """
-    Botón cuadrado TOOL_SZ x TOOL_SZ que muestra el color actual del viewport.
-    Al hacer click despliega un menú con presets + opción custom + add/delete.
+    Square TOOL_SZ x TOOL_SZ button showing the current viewport color.
+    Clicking opens a menu with presets + custom option + add/delete.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        # "Original" siempre es el default conocido de 3ds Max
+        # "Original" is always the known 3ds Max default
         # solid=56,56,56 | gradient top=26,26,26 | gradient bottom=77,77,77
         self._orig_hex      = "#383838"   # 56,56,56
         self._orig_grad_top = "#1a1a1a"   # 26,26,26
         self._orig_grad_bot = "#4d4d4d"   # 77,77,77
-        # Iniciar con el color original — se actualiza al color real tras 300ms
+        # Start with the original color — updated to the real color after 300ms
         self._cur_hex       = self._orig_hex
         self._hovered   = False
 
@@ -860,18 +860,18 @@ class ViewportColorButton(QtWidgets.QPushButton):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.Antialiasing)
 
-        # fondo del botón: color actual del viewport
+        # button background: current viewport color
         col = QtGui.QColor(self._cur_hex)
         p.fillRect(self.rect(), col)
 
-        # borde — más brillante en hover
+        # border — brighter on hover
         border_col = QtGui.QColor(MX_BORDER_HI if self._hovered else MX_BORDER)
         pen = QtGui.QPen(border_col)
         pen.setWidth(1)
         p.setPen(pen)
         p.drawRect(self.rect().adjusted(0, 0, -1, -1))
 
-        # triángulo dropdown en esquina inferior derecha
+        # dropdown triangle in the bottom-right corner
         arrow_col = QtGui.QColor(255, 255, 255, 160) if col.lightness() < 128 else QtGui.QColor(0, 0, 0, 120)
         p.setBrush(arrow_col)
         p.setPen(QtCore.Qt.NoPen)
@@ -883,7 +883,7 @@ class ViewportColorButton(QtWidgets.QPushButton):
         ])
         p.drawPolygon(tri)
 
-        # pequeño label "BG" centrado
+        # small centered "BG" label
         lbl_col = QtGui.QColor(255, 255, 255, 200) if col.lightness() < 128 else QtGui.QColor(0, 0, 0, 160)
         p.setPen(lbl_col)
         f = p.font(); f.setPointSize(7); f.setFamily("Tahoma"); p.setFont(f)
@@ -891,7 +891,7 @@ class ViewportColorButton(QtWidgets.QPushButton):
         p.end()
 
     def _restore_on_close(self):
-        """Llamado al cerrar el dock — restaura los colores originales."""
+        """Called when the dock closes — restores the original colors."""
         _restore_vp_originals(self._orig_hex, self._orig_grad_top, self._orig_grad_bot)
 
     def _show_menu(self):
@@ -909,12 +909,12 @@ class ViewportColorButton(QtWidgets.QPushButton):
             QMenu::separator {{ height: 1px; background: {MX_SEP}; margin: 3px 0; }}
         """)
 
-        # — Presets con swatch de color via QWidgetAction ─────────────────
+        # — Presets with color swatch via QWidgetAction ───────────────────
         menu.setStyleSheet(menu.styleSheet() + "QMenu::item { padding-left: 8px; }")
         for i, preset in enumerate(presets):
             hex_c  = preset["hex"]
             name   = preset["name"]
-            # Widget personalizado: swatch + label con aire
+            # Custom widget: swatch + label with padding
             wa = QtWidgets.QWidgetAction(menu)
             row = QtWidgets.QWidget()
             row.setStyleSheet("background: transparent;")
@@ -974,11 +974,11 @@ class ViewportColorButton(QtWidgets.QPushButton):
 
         elif kind == "custom":
             initial  = QtGui.QColor(self._cur_hex)
-            prev_hex = self._cur_hex          # guardamos para cancelar
+            prev_hex = self._cur_hex          # keep it for cancel
             dlg = QtWidgets.QColorDialog(initial, self)
             dlg.setWindowTitle("Viewport Background Color")
             dlg.setOption(QtWidgets.QColorDialog.NoButtons, False)
-            # Preview en tiempo real
+            # Real-time preview
             def _on_color_changing(col):
                 if col.isValid():
                     _apply_vp_color(col.name())
@@ -991,7 +991,7 @@ class ViewportColorButton(QtWidgets.QPushButton):
                     _apply_vp_color(hex_c)
                     self.set_color(hex_c)
             else:
-                # Cancel — restaurar el color previo
+                # Cancel — restore the previous color
                 _apply_vp_color(prev_hex)
                 self.set_color(prev_hex)
 
@@ -1043,7 +1043,7 @@ class LibraryIconButton(IconToolButton):
         p.end()
 
 
-# ── Separador de sección full-height ─────────────────────────────────────────
+# ── Full-height section separator ────────────────────────────────────────────
 def _section_sep(layout):
     layout.addSpacing(10)
     line = QtWidgets.QFrame()
@@ -1060,7 +1060,7 @@ def _lbl_mm():
     l = QtWidgets.QLabel("mm"); l.setObjectName("mm_lbl"); return l
 
 def _stretch(layout):
-    """Agrega un widget invisible que absorbe el espacio sobrante."""
+    """Add an invisible widget that absorbs the leftover space."""
     spacer = QtWidgets.QWidget()
     spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
     spacer.setStyleSheet("background: transparent;")
@@ -1093,9 +1093,9 @@ def get_project_root():
     except: return ""
 
 def get_pipeline_base():
-    """Devuelve el directorio que contiene los proyectos VFX-xxx.
-    Primero intenta desde el project folder de Max,
-    si no encuentra prefix usa root_drive del config como fallback."""
+    """Return the directory that contains the VFX-xxx projects.
+    Tries the Max project folder first;
+    if no prefix is found, falls back to the config's root_drive."""
     cfg    = _cfg()
     prefix = cfg.get("project_prefix", "VFX-")
     try:
@@ -1104,12 +1104,12 @@ def get_pipeline_base():
         for i, p in enumerate(parts):
             if p.startswith(prefix):
                 base = os.sep.join(parts[:i])
-                # En Windows "T:" sin barra lista el cwd del drive, no la raiz
+                # On Windows "T:" without a slash lists the drive's cwd, not the root
                 if base.endswith(":"):
                     base = base + os.sep
                 return base
     except: pass
-    # Fallback directo al root_drive configurado
+    # Direct fallback to the configured root_drive
     drive = cfg.get("root_drive", "T:").rstrip(os.sep)
     return drive + os.sep
 
@@ -1129,14 +1129,14 @@ def next_version_folder(base_dir, prefix):
 
 def capture_viewport_to_file(out_path):
     """
-    Captura el viewport activo de 3ds Max a un archivo PNG.
-    Idéntico al método del StudioLibraryMAX — tres métodos de fallback.
-    Confirmado funcional en MAX 2025.
+    Capture the active 3ds Max viewport to a PNG file.
+    Same approach as StudioLibraryMAX — three fallback methods.
+    Confirmed working in MAX 2025.
     """
     out_fwd = out_path.replace("\\", "/")
     captured = False
 
-    # Método A: gw.getViewportDib() + .filename + save — confirmado MAX 2025
+    # Method A: gw.getViewportDib() + .filename + save — confirmed MAX 2025
     if not captured:
         try:
             mxs = (f'( local img = gw.getViewportDib() ; '
@@ -1146,7 +1146,7 @@ def capture_viewport_to_file(out_path):
         except Exception as e:
             print(f"[snap A] {e}")
 
-    # Método B: pymxs directo
+    # Method B: pymxs direct
     if not captured:
         try:
             img = rt.gw.getViewportDib()
@@ -1157,7 +1157,7 @@ def capture_viewport_to_file(out_path):
         except Exception as e:
             print(f"[snap B] {e}")
 
-    # Método C: grabView()
+    # Method C: grabView()
     if not captured:
         try:
             mxs = f'( local b = grabView() ; b.filename = "{out_fwd}" ; save b )'
@@ -1202,7 +1202,7 @@ class StudioToolbar(QtWidgets.QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # Row widget con layout horizontal — ocupa todo el ancho disponible
+        # Row widget with horizontal layout — takes all available width
         row_w = QtWidgets.QWidget()
         row_w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         L = QtWidgets.QHBoxLayout(row_w)
@@ -1214,7 +1214,7 @@ class StudioToolbar(QtWidgets.QWidget):
         outer.addStretch(1)
 
         # ── SECTION: TOOLS ───────────────────────────────────────────────────
-        # Botón "TOOLS" que abre un QMenu con los scripts de PATH_TOOLS_DIR
+        # "TOOLS" button that opens a QMenu with the scripts in PATH_TOOLS_DIR
         self.btn_tools_menu = QtWidgets.QPushButton("TOOLS ▾")
         self.btn_tools_menu.setObjectName("tools_menu_btn")
         self.btn_tools_menu.setFixedHeight(16)
@@ -1256,7 +1256,7 @@ class StudioToolbar(QtWidgets.QWidget):
         L.addSpacing(4)
         L.addWidget(self.btn_library)
 
-        # Stretch después de tools — absorbe espacio sobrante de la sección TOOLS
+        # Stretch after tools — absorbs leftover space in the TOOLS section
         _stretch(L)
 
         # ── SECTION: RESOLUTION ───────────────────────────────────────────────
@@ -1295,7 +1295,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.res_note.setFixedWidth(198); self.res_note.setFixedHeight(H)
         self.res_note.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.res_note.setToolTip("Resolution preset label — click the arrow to pick a preset")
-        # Lista de presets como flecha DENTRO del campo (antes botón L aparte)
+        # Preset list as an arrow INSIDE the field (was a separate L button)
         self.res_list_act = self.res_note.addAction(_mini_icon("chevron"), QtWidgets.QLineEdit.TrailingPosition)
         self.res_list_act.setToolTip("Saved + standard resolution presets")
 
@@ -1314,7 +1314,7 @@ class StudioToolbar(QtWidgets.QWidget):
         for w in [self.res_note, self.res_s, self.res_d]: L.addWidget(w)
         L.addSpacing(0)
 
-        # Stretch después de RESOLUTION — FILM size es su propia sección
+        # Stretch after RESOLUTION — FILM size is its own section
         _stretch(L)
 
         # ── SECTION: FILM ────────────────────────────────────────────────
@@ -1347,7 +1347,7 @@ class StudioToolbar(QtWidgets.QWidget):
         L.addWidget(self.film_spin); L.addWidget(_mm)
         for w in [self.film_note, self.film_s, self.film_d]: L.addWidget(w)
 
-        # Stretch después de FILM
+        # Stretch after FILM
         _stretch(L)
 
         # ── SECTION: FPS ──────────────────────────────────────────────────────
@@ -1362,7 +1362,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.fps_lbl.clicked.connect(self._show_fps_menu)
         L.addWidget(self.fps_lbl)
 
-        # mini separador interno
+        # small inner separator
         L.addSpacing(8)
         _inner = QtWidgets.QFrame()
         _inner.setFrameShape(QtWidgets.QFrame.VLine)
@@ -1378,11 +1378,11 @@ class StudioToolbar(QtWidgets.QWidget):
         self.unit_lbl = QtWidgets.QLabel("—")
         self.unit_lbl.setObjectName("unit_val_lbl")
         self.unit_lbl.setStyleSheet(f"color:{MX_TEXT_DIM}; font-size:{FONT_MAIN}; background:transparent;")
-        self.unit_lbl.setFixedWidth(110)   # ancho fijo — "Kilometers" es la más larga
+        self.unit_lbl.setFixedWidth(110)   # fixed width — "Kilometers" is the longest
         self.unit_lbl.setToolTip("Current scene system unit (read-only)")
         L.addWidget(self.unit_lbl)
 
-        # Stretch después de FPS/UNIT
+        # Stretch after FPS/UNIT
         _stretch(L)
 
         # ── SECTION: PIPELINE ─────────────────────────────────────────────────
@@ -1421,13 +1421,13 @@ class StudioToolbar(QtWidgets.QWidget):
         L.addSpacing(2)
         L.addWidget(self.folder_btn)
 
-        # Stretch después de PIPELINE
+        # Stretch after PIPELINE
         _stretch(L)
 
         # ── SECTION: ACTIONS ─────────────────────────────────────────────────
         _section_sep(L)
 
-        # Snap button — entre los dos boxes, tamaño icono original
+        # Snap button — between the two boxes, original icon size
         self.btn_snap = IconToolButton(_svg_snap, accent_color=IC_ACCENT2)
         self.btn_snap.setFixedSize(TOOL_SZ, TOOL_SZ)
         self.btn_snap.setToolTip("Viewport Snapshot\nCaptures the active viewport and saves a JPG to the current task's review folder\nRight-click: open snapshots folder")
@@ -1439,8 +1439,8 @@ class StudioToolbar(QtWidgets.QWidget):
         self.btn_vp_color = ViewportColorButton()
         self.btn_vp_color.setToolTip("Viewport Background Color\nClick to change — resets on 3ds Max restart")
         L.addWidget(self.btn_vp_color)
-        # El botón BG arranca en el default de Max (56,56,56)
-        # y se actualiza solo cuando el usuario elige un color
+        # The BG button starts at the Max default (56,56,56)
+        # and only updates when the user picks a color
         L.addSpacing(8)
 
         def _split_btn(text, tip):
@@ -1554,8 +1554,8 @@ class StudioToolbar(QtWidgets.QWidget):
 
     # ── status flash ─────────────────────────────────────────────────────────
     def _set_status(self, text, color=None, detail=None):
-        """Muestra el resultado de la última acción. `detail` (ej. la ruta completa)
-        queda en el tooltip y en el historial (click sobre el status)."""
+        """Show the result of the last action. `detail` (e.g. the full path)
+        goes into the tooltip and the history (click the status)."""
         color = color or MX_TEXT_DIM
         self._status_log.append((datetime.now().strftime("%H:%M:%S"), text, color, detail or ""))
         del self._status_log[:-25]
@@ -1568,7 +1568,7 @@ class StudioToolbar(QtWidgets.QWidget):
         paint(color, color)
         self.status_lbl.setToolTip((detail + "\n\n" if detail else "") + "Click for history")
         self.status_lbl.setStyleSheet(f"font-size:{FONT_LABEL}; min-width:110px; background:transparent;")
-        # A los 2.2 s el texto vuelve a gris; el punto conserva el color del resultado
+        # After 2.2 s the text turns gray again; the dot keeps the result color
         QtCore.QTimer.singleShot(2200, lambda: seq == self._status_seq and paint(color, MX_TEXT_DIM))
 
     # ── tools dropdown menu ───────────────────────────────────────────────────
@@ -1582,8 +1582,8 @@ class StudioToolbar(QtWidgets.QWidget):
 
     @staticmethod
     def _tool_description(path, max_lines=4):
-        """Lee el encabezado del script y devuelve su descripción para el tooltip.
-        Busca un bloque DESCRIPTION/Description:, si no, la primera línea con texto."""
+        """Read the script header and return its description for the tooltip.
+        Looks for a DESCRIPTION/Description: block, else the first line with text."""
         try:
             raw = open(path, "rb").read(4000)
             try:    head = raw.decode("utf-8")
@@ -1594,8 +1594,8 @@ class StudioToolbar(QtWidgets.QWidget):
         for l in head.splitlines()[:60]:
             l = re.sub(r'^\s*(--|#|/\*|\*/|\*|"""|\'\'\')\s?', '', l).rstrip()
             l = l.replace('*/', '').replace('"""', '').strip()
-            if re.fullmatch(r'[=\-─━_*#~ ]*', l): l = ""      # separadores
-            if re.search(r'-\*-\s*coding', l): l = ""          # cabecera de encoding .py
+            if re.fullmatch(r'[=\-─━_*#~ ]*', l): l = ""      # separators
+            if re.search(r'-\*-\s*coding', l): l = ""          # .py encoding header
             lines.append(l)
         desc = []
         for i, l in enumerate(lines):
@@ -1603,9 +1603,9 @@ class StudioToolbar(QtWidgets.QWidget):
             if m:
                 if m.group(1): desc.append(m.group(1))
                 for nxt in lines[i+1:]:
-                    if not nxt or re.match(r'^[A-Z][A-Z /&]{3,}$', nxt): break   # fin de bloque
+                    if not nxt or re.match(r'^[A-Z][A-Z /&]{3,}$', nxt): break   # end of block
                     desc.append(nxt)
-                    if nxt.endswith(".") or len(desc) >= max_lines: break   # primera frase
+                    if nxt.endswith(".") or len(desc) >= max_lines: break   # first sentence
                 break
         if not desc:
             desc = [next((l for l in lines if l), "")]
@@ -1614,7 +1614,7 @@ class StudioToolbar(QtWidgets.QWidget):
         return "\n".join(desc)
 
     def _fill_tools_menu(self, menu, folder):
-        """Agrega scripts de folder al menú; cada subcarpeta es un submenú. Devuelve cantidad."""
+        """Add the folder's scripts to the menu; each subfolder is a submenu. Returns the count."""
         try:
             entries = sorted(os.listdir(folder), key=str.lower)
         except Exception:
@@ -1664,13 +1664,13 @@ class StudioToolbar(QtWidgets.QWidget):
             act.setToolTip(tools_dir)
             act.triggered.connect(lambda: os.startfile(tools_dir))
 
-        # Abrir el menú justo debajo del botón
+        # Open the menu right below the button
         menu.exec(self.btn_tools_menu.mapToGlobal(
             QtCore.QPoint(0, self.btn_tools_menu.height())))
 
-    # ── selección actual / rutas del pipeline ────────────────────────────────
+    # ── current selection / pipeline paths ───────────────────────────────────
     def _sel(self):
-        """(project, seq, shot, task) de los dropdowns; shot es el nombre completo de carpeta."""
+        """(project, seq, shot, task) from the dropdowns; shot is the full folder name."""
         idx = self.shot_cb.currentIndex()
         return (self.project_cb.currentText(), self.sequence_cb.currentText(),
                 self.shot_cb.itemData(idx) if idx >= 0 else None, self.task_cb.currentText())
@@ -1763,14 +1763,14 @@ class StudioToolbar(QtWidgets.QWidget):
     def _load_scene(self, path):
         try:
             if hasattr(rt, "checkForSave") and rt.checkForSave() is False:
-                return                               # el usuario canceló "¿guardar cambios?"
+                return                               # the user cancelled "save changes?"
             rt.loadMaxFile(path, useFileUnits=True, quiet=False)
             self._set_status("File loaded", "#70aa70")
         except Exception as e:
             self._set_status("Open Error", "#e06060"); print(f"[STM] open: {e}")
 
     def _next_scene_path(self):
-        """Ruta de la próxima versión: <task>/<projects>/<shot>_<task>_v###.max"""
+        """Path of the next version: <task>/<projects>/<shot>_<task>_v###.max"""
         _, _, shot, task = self._sel()
         scene_dir = self._task_dir(_cfg()["sub_projects"])
         if not scene_dir: return None
@@ -1817,7 +1817,7 @@ class StudioToolbar(QtWidgets.QWidget):
         m.setToolTipsVisible(True)
         m.exec(self._menu_below(self.status_lbl))
 
-    # ── GET resaltado cuando el archivo está en otro shot/task ───────────────
+    # ── GET highlighted when the file is in another shot/task ────────────────
     def _update_get_attention(self):
         try:
             info = self._parse_pipeline_path(rt.maxFilePath) if str(rt.maxFilePath) else None
@@ -1850,8 +1850,8 @@ class StudioToolbar(QtWidgets.QWidget):
                 except UnicodeDecodeError: src = raw.decode("cp1252")
                 ctx = {"__name__": "__main__", "__file__": path, "rt": rt, "os": os}
                 exec(compile(src, path, "exec"), ctx)
-                # Mantener vivo el namespace: ventanas top-level sin parent
-                # (ej. StudioLibrary: window = ...) se destruirían por GC
+                # Keep the namespace alive: parentless top-level windows
+                # (e.g. StudioLibrary: window = ...) would be destroyed by GC
                 if not hasattr(self, "_script_ctx"): self._script_ctx = {}
                 self._script_ctx[path] = ctx
                 self._set_status("Loaded", "#70aa70")
@@ -1870,7 +1870,7 @@ class StudioToolbar(QtWidgets.QWidget):
 
     # ── res ───────────────────────────────────────────────────────────────────
     def _res_set(self, w, h):
-        """Aplica W y H atómicamente, siempre números pares, sin loops."""
+        """Apply W and H atomically, always even numbers, no loops."""
         w = w if w % 2 == 0 else w - 1
         h = h if h % 2 == 0 else h - 1
         w = max(2, w); h = max(2, h)
@@ -1885,7 +1885,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.res_note.setText(self._res_label(w, h))
 
     def _res_label(self, w, h):
-        """Nombre del preset guardado que coincide; si no hay, el estándar; si no, vacío."""
+        """Name of the matching saved preset; else the standard one; else empty."""
         m = next((p for p in self.state.get("res_presets", []) if p['w'] == w and p['h'] == h), None)
         if m: return m.get('n', "")
         return next((n for n, bw, bh in BUILTIN_RES if (bw, bh) == (w, h)), "")
@@ -1963,8 +1963,8 @@ class StudioToolbar(QtWidgets.QWidget):
 
     @staticmethod
     def _menu_header(m, text):
-        """Encabezado de sección en un menú. addSection() depende del estilo de Windows
-        y a veces no dibuja el texto; una acción deshabilitada se ve igual en todos."""
+        """Section header in a menu. addSection() depends on the Windows style
+        and sometimes skips the text; a disabled action looks the same everywhere."""
         if m.actions(): m.addSeparator()
         a = m.addAction(text.upper()); a.setEnabled(False)
         f = a.font(); f.setPointSizeF(7.5); f.setBold(True); a.setFont(f)
@@ -1991,7 +1991,7 @@ class StudioToolbar(QtWidgets.QWidget):
         m.exec(self._menu_below(self.res_note))
 
     def _apply_res(self, p):
-        # Bloquear ambas señales para aplicar W y H de una sola vez sin cascada
+        # Block both signals to apply W and H in one go without cascading
         self.res_w.blockSignals(True)
         self.res_h.blockSignals(True)
         self.res_w.setValue(p['w'])
@@ -2000,7 +2000,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.res_h.blockSignals(False)
         self.res_note.setText(p.get('n', ""))
         self._update_aspect()
-        # Si el lock está activo, actualizar el ratio al nuevo preset
+        # If the lock is on, update the ratio to the new preset
         if self.res_lock_btn.isChecked():
             self._lock_ratio = p['w'] / p['h'] if p['h'] else 1.0
         self._write_res_to_max()
@@ -2051,9 +2051,9 @@ class StudioToolbar(QtWidgets.QWidget):
     def _apply_film(self, p):
         self.film_spin.setValue(p['v']); self.film_note.setText(p.get('n',"")); self._write_film_to_max()
 
-    # ── pipeline — lógica original transplantada al 100% ─────────────────────
+    # ── pipeline — original logic transplanted 100% ──────────────────────────
     def _on_project_changed(self, project_name):
-        """Al cambiar proyecto, actualiza el root de Max y gestiona carpeta 3D."""
+        """On project change, update the Max root and handle the 3D folder."""
         if not project_name: return
         cfg          = _cfg()
         base         = get_pipeline_base()
@@ -2076,7 +2076,7 @@ class StudioToolbar(QtWidgets.QWidget):
         prefix       = cfg.get("project_prefix", "VFX-")
         base         = get_pipeline_base()
 
-        # Nombre del proyecto actual si hay uno cargado
+        # Current project name if one is loaded
         current_project_name = ""
         current_root = get_project_root()
         if current_root:
@@ -2093,7 +2093,7 @@ class StudioToolbar(QtWidgets.QWidget):
         initial = self.state.get("project", current_project_name)
         if initial: self.project_cb.setCurrentText(initial)
         self.project_cb.blockSignals(False)
-        # Disparar la cadena una sola vez con el proyecto final
+        # Fire the chain only once with the final project
         self._on_project_changed(self.project_cb.currentText())
 
     def _populate_sequences(self):
@@ -2148,7 +2148,7 @@ class StudioToolbar(QtWidgets.QWidget):
 
     @staticmethod
     def _parse_pipeline_path(folder):
-        """...\\VFX-XXX\\seq\\shot\\3D\\task\\... → dict(project, seq, shot, task) o None."""
+        """...\\VFX-XXX\\seq\\shot\\3D\\task\\... → dict(project, seq, shot, task) or None."""
         prefix = _cfg()["project_prefix"]
         parts  = [p for p in str(folder).replace("/", "\\").split("\\") if p]
         idx = next((i for i, p in enumerate(parts) if p.startswith(prefix)), None)
@@ -2157,12 +2157,12 @@ class StudioToolbar(QtWidgets.QWidget):
             "project": parts[idx][len(prefix):],
             "seq":     parts[idx + 1],
             "shot":    parts[idx + 2],
-            # Windows no distingue mayúsculas: "3D" == "3d"
+            # Windows is case-insensitive: "3D" == "3d"
             "task":    parts[idx + 4] if len(parts) > idx + 4 and parts[idx + 3].lower() == "3d" else "",
         }
 
     def _get_pipeline_from_path(self):
-        """GET: lee rt.maxFilePath y setea los 4 dropdowns."""
+        """GET: read rt.maxFilePath and set the 4 dropdowns."""
         try:
             info = self._parse_pipeline_path(rt.maxFilePath)
             if info is None: return
@@ -2181,9 +2181,9 @@ class StudioToolbar(QtWidgets.QWidget):
             print(f"STM GET error: {e}")
 
     # ── project paths ─────────────────────────────────────────────────────────
-    # Max NO guarda los Project Paths dentro del .max (son de la sesión / .mxp).
-    # Set Paths los guarda además en AppData del rootNode, y al abrir el archivo
-    # (_on_file_opened) se vuelven a aplicar. Solo afecta archivos donde se usó Set Paths.
+    # Max does NOT store Project Paths inside the .max (they belong to the session / .mxp).
+    # Set Paths also stores them in the rootNode AppData, and on file open
+    # (_on_file_opened) they are re-applied. Only affects files where Set Paths was used.
     _PATH_KEYS = ("scene", "image", "preview", "renderoutput", "import", "export")
 
     @staticmethod
@@ -2211,14 +2211,14 @@ class StudioToolbar(QtWidgets.QWidget):
                 "image":        f"{task_rel}\\{sub_p}\\textures",
                 "preview":      f"{task_rel}\\{sub_r}",
                 "renderoutput": f"{task_rel}\\{sub_pub}",
-                "export":       f"{task_rel}\\{sub_pub}",   # export → publish (igual que render)
+                "export":       f"{task_rel}\\{sub_pub}",   # export → publish (same as render)
             }
-            # import path — solo si la task tiene carpeta "import"
+            # import path — only if the task has an "import" folder
             if "import" in get_task_projects_subs(task):
                 dirs["import"] = f"{task_rel}\\{sub_p}\\import"
             self._apply_path_dirs(dirs)
 
-            # Guardar dentro del .max para restaurarlos al reabrir el archivo
+            # Store inside the .max to restore them when the file is reopened
             project_folder = os.path.join(get_pipeline_base(), f"{cfg['project_prefix']}{project}", "3D")
             try:
                 rt.setAppData(rt.rootNode, STM_APPDATA_PATHS, json.dumps({
@@ -2233,10 +2233,10 @@ class StudioToolbar(QtWidgets.QWidget):
             self._set_status("PATH Error", "#e06060"); print(e)
 
     def _restore_paths_from_file(self):
-        """Si el .max abierto tiene paths guardados por Set Paths, los re-aplica.
-        Solo si el archivo sigue en el mismo project/seq/shot/task donde se guardaron:
-        si se copió o se hizo Save As a otro shot, se ignoran.
-        Devuelve "restored", "skipped" o None (sin paths guardados)."""
+        """If the open .max has paths stored by Set Paths, re-apply them.
+        Only if the file is still in the same project/seq/shot/task they were saved for:
+        if it was copied or Saved As to another shot, they are ignored.
+        Returns "restored", "skipped" or None (no stored paths)."""
         try:
             raw = rt.getAppData(rt.rootNode, STM_APPDATA_PATHS)
             if not raw: return None
@@ -2244,7 +2244,7 @@ class StudioToolbar(QtWidgets.QWidget):
 
             stored = {k: data.get(k) for k in ("project", "seq", "shot", "task")}
             if not all(stored.values()):
-                # Marca de v2.5.39 (sin shot/task): deducirlos del path de escena guardado
+                # v2.5.39 marker (no shot/task): infer them from the stored scene path
                 rel = data.get("dirs", {}).get("scene", "")
                 bits = [b for b in rel.split("\\") if b and b != ".."]
                 pf_bits = [b for b in data.get("project_folder", "").replace("/", "\\").split("\\") if b]
@@ -2254,8 +2254,8 @@ class StudioToolbar(QtWidgets.QWidget):
                     stored = {"project": proj[len(prefix):], "seq": bits[0],
                               "shot": bits[1], "task": bits[3]}
             here = self._parse_pipeline_path(rt.maxFilePath) or {}
-            # project/seq/shot tienen que coincidir siempre; el task solo si el archivo
-            # está dentro de una carpeta de task. Comparación sin mayúsculas (Windows).
+            # project/seq/shot must always match; task only if the file
+            # is inside a task folder. Case-insensitive comparison (Windows).
             keys = ["project", "seq", "shot"] + (["task"] if here.get("task") else [])
             same = lambda k: str(stored.get(k) or "").lower() == str(here.get(k) or "").lower()
             if not here or not all(same(k) for k in keys):
@@ -2272,7 +2272,7 @@ class StudioToolbar(QtWidgets.QWidget):
             return None
 
     def _on_file_opened(self):
-        """Callback filePostOpen: GET de dropdowns + restaurar paths guardados en el archivo."""
+        """filePostOpen callback: GET the dropdowns + restore paths stored in the file."""
         self._get_pipeline_from_path()
         result = self._restore_paths_from_file()
         if result == "restored":
@@ -2295,19 +2295,19 @@ class StudioToolbar(QtWidgets.QWidget):
             current_max = str(rt.maxFileName)
             raw_name    = os.path.splitext(current_max)[0] if current_max else ""
 
-            # Nombre base sin _vXXX: dropdowns (SHOT NAME) o archivo Max abierto
+            # Base name without _vXXX: dropdowns (SHOT NAME) or the open Max file
             if self.shotname_chk.isChecked() or not raw_name:
                 prefix = f"{shot}_{task_clean}"
             else:
                 m = re.match(r'^(.+?)(_v\d+)?$', raw_name)
                 prefix = m.group(1) if m else raw_name
 
-            # Versión: siempre la del archivo Max abierto
+            # Version: always the one from the open Max file
             mv_file = re.search(r'_v(\d+)$', raw_name)
             file_ver, pad = (int(mv_file.group(1)), len(mv_file.group(1))) if mv_file else (1, 3)
             folder_name = f"{prefix}_v{file_ver:0{pad}d}"
 
-            # Si esa versión ya tiene renders, preguntar en vez de pisar en silencio
+            # If that version already has renders, ask instead of silently overwriting
             target = os.path.join(publish_base, folder_name)
             if os.path.isdir(target) and any(os.scandir(target)):
                 box = QtWidgets.QMessageBox(self)
@@ -2338,14 +2338,14 @@ class StudioToolbar(QtWidgets.QWidget):
             self._set_status("SET RENDER Error", "#e06060"); print(e)
 
     def _set_renderer_outputs(self, pub_dir, base, sep):
-        """Apunta al publish las salidas que el renderer escribe por su cuenta.
-        Solo actualiza rutas de salidas YA activas — no prende nada nuevo.
-        Devuelve cuántas salidas extra se actualizaron (para el status)."""
+        """Point the outputs the renderer writes on its own to publish.
+        Only updates paths of outputs ALREADY enabled — never turns anything on.
+        Returns how many extra outputs were updated (for the status)."""
         done = []
         r = rt.renderers.current
         rclass = str(rt.classOf(r)).lower()
 
-        # Render Elements de Max (V-Ray, Corona, Scanline, Arnold legacy…)
+        # Max Render Elements (V-Ray, Corona, Scanline, Arnold legacy…)
         try:
             mgr = rt.maxOps.GetCurRenderElementMgr()
             for i in range(mgr.NumRenderElements()):
@@ -2357,7 +2357,7 @@ class StudioToolbar(QtWidgets.QWidget):
         except Exception as e:
             print(f"[STM Render] elements: {e}")
 
-        # V-Ray VFB: Raw image file y Separate render channels
+        # V-Ray VFB: Raw image file and Separate render channels
         if "v_ray" in rclass or "vray" in rclass:
             try:
                 if getattr(r, "output_saveRawFile", False):
@@ -2369,7 +2369,7 @@ class StudioToolbar(QtWidgets.QWidget):
             except Exception as e:
                 print(f"[STM Render] V-Ray: {e}")
 
-        # Arnold: carpeta de salida del AOV Manager
+        # Arnold: AOV Manager output folder
         if "arnold" in rclass:
             try:
                 aov = r.AOVManager
@@ -2401,7 +2401,7 @@ class StudioToolbar(QtWidgets.QWidget):
             self._load_scene(f)
 
     def save_scene_dialog(self):
-        """Abre el Save dialog de Max en la carpeta del task con nombre versionado listo."""
+        """Open the Max Save dialog in the task folder with the versioned name ready."""
         project = self.project_cb.currentText()
         seq     = self.sequence_cb.currentText()
         idx     = self.shot_cb.currentIndex()
@@ -2413,7 +2413,7 @@ class StudioToolbar(QtWidgets.QWidget):
         scene_dir = os.path.join(get_pipeline_base(), f"{cfg['project_prefix']}{project}",
                                  seq, shot, "3D", task, cfg["sub_projects"])
         os.makedirs(scene_dir, exist_ok=True)
-        # Calcular nombre versionado: buscar el último _vXXX existente
+        # Compute versioned name: find the latest existing _vXXX
         task_clean = task.split("_", 1)[-1] if "_" in task else task
         base_name  = f"{shot}_{task_clean}"
         rx         = re.compile(r'^' + re.escape(base_name) + r'_v(\d+)\.max$', re.IGNORECASE)
@@ -2424,7 +2424,7 @@ class StudioToolbar(QtWidgets.QWidget):
         next_ver   = max_ver + 1
         filename   = f"{base_name}_v{next_ver:03d}.max"
         full_path  = os.path.join(scene_dir, filename).replace(os.sep, "/")
-        # Abrir el Save dialog de Max con el nombre ya listo — el usuario da Save
+        # Open the Max Save dialog with the name ready — the user clicks Save
         f = rt.getSaveFileName(
             caption="Save Max Scene",
             filename=full_path,
@@ -2458,14 +2458,14 @@ class StudioToolbar(QtWidgets.QWidget):
         proj_sub     = subs[0] if subs else "1_projects"
         proj_subs    = get_task_projects_subs(task)
 
-        # Crear subcarpetas dentro de projects/ para esta task específica
+        # Create subfolders inside projects/ for this specific task
         for ps in proj_subs:
             os.makedirs(os.path.join(task_path, proj_sub, ps), exist_ok=True)
-        # Si no había ninguna, crear igualmente el folder projects/
+        # If there were none, still create the projects/ folder
         if not proj_subs:
             os.makedirs(os.path.join(task_path, proj_sub), exist_ok=True)
 
-        # Crear los demás subfolders (review, publish, extras)
+        # Create the other subfolders (review, publish, extras)
         for sub in subs[1:]:
             os.makedirs(os.path.join(task_path, sub), exist_ok=True)
 
@@ -2485,7 +2485,7 @@ class StudioToolbar(QtWidgets.QWidget):
             try: rt.pathConfig.setDir(rt.name('export'), ".\\export")
             except: pass
             rt.rendOutputFilename = ""; rt.rendSaveFile = False
-            try: rt.deleteAppData(rt.rootNode, STM_APPDATA_PATHS)   # el archivo deja de restaurar paths
+            try: rt.deleteAppData(rt.rootNode, STM_APPDATA_PATHS)   # the file stops restoring paths
             except: pass
             self._set_status("Reset")
 
@@ -2510,7 +2510,7 @@ class StudioToolbar(QtWidgets.QWidget):
                     self.res_w.setValue(mw); self.res_h.setValue(mh)
                     self.res_w.blockSignals(False); self.res_h.blockSignals(False)
                     self._syncing_from_max = False
-                    # Actualizar solo la nota, sin escribir de vuelta a Max
+                    # Update only the note, without writing back to Max
                     self.res_note.setText(self._res_label(mw, mh))
             self._update_aspect()
             self._update_get_attention()
@@ -2531,19 +2531,19 @@ class StudioToolbar(QtWidgets.QWidget):
             self.film_lbl.setStyleSheet(f"color:{color}; font-size:{FONT_LABEL}; font-weight:bold; background:transparent;")
             self._current_source = source
             self._current_obj    = sel[0] if len(sel)==1 else None
-            # FPS — solo lectura desde rt.frameRate
+            # FPS — read-only from rt.frameRate
             try:
                 fps = rt.frameRate
                 fps_str = str(int(fps)) if fps == int(fps) else f"{fps:.2f}"
                 self.fps_lbl.setText(f"{fps_str} FPS")
             except: self.fps_lbl.setText("— FPS")
             try:
-                # rt.units.SystemType devuelve un Name como #centimeters, #meters, etc.
+                # rt.units.SystemType returns a Name such as #centimeters, #meters, etc.
                 unit_name = str(rt.units.SystemType)   # e.g. "#centimeters"
                 unit_clean = unit_name.lstrip("#").capitalize()
                 self.unit_lbl.setText(f"({unit_clean})")
             except: self.unit_lbl.setText("—")
-            # Sync bidireccional project folder — si Max cambia el folder, actualizar dropdown
+            # Two-way project folder sync — if Max changes the folder, update the dropdown
             try:
                 cur_root = get_project_root()
                 if cur_root:
@@ -2565,7 +2565,7 @@ class StudioToolbar(QtWidgets.QWidget):
         except: pass
 
     def _sync_vp_color_btn(self):
-        """Lee el color real del viewport y actualiza el botón BG."""
+        """Read the real viewport color and update the BG button."""
         try:
             hex_c = _get_current_vp_hex()
             if hex_c not in ("#ffffff", "#000000"):
@@ -2579,7 +2579,7 @@ class StudioToolbar(QtWidgets.QWidget):
             self._set_status("Config saved", "#70aa70")
 
     def _capture_viewport(self):
-        """Captura el viewport activo y lo guarda en la carpeta configurada de la task activa."""
+        """Capture the active viewport and save it to the active task's configured folder."""
         try:
             project = self.project_cb.currentText()
             seq     = self.sequence_cb.currentText()
@@ -2602,7 +2602,7 @@ class StudioToolbar(QtWidgets.QWidget):
                 thumb_dir = os.path.join(thumb_dir, thumb_subdir)
             os.makedirs(thumb_dir, exist_ok=True)
 
-            # ── Nombre: partes configurables + vNNN incremental ──────────────
+            # ── Name: configurable parts + incremental vNNN ──────────────────
             max_name   = os.path.splitext(str(rt.maxFileName))[0] if str(rt.maxFileName) else shot
             task_clean = task.split("_", 1)[-1] if "_" in task else task
 
@@ -2616,7 +2616,7 @@ class StudioToolbar(QtWidgets.QWidget):
             inc_task    = _bool(cfg.get("snap_inc_task",    False), False)
             inc_camera  = _bool(cfg.get("snap_inc_camera",  True),  True)
 
-            # Obtener nombre de cámara/vista
+            # Get camera/view name
             view_name = "viewport"
             if inc_camera:
                 try:
@@ -2637,7 +2637,7 @@ class StudioToolbar(QtWidgets.QWidget):
                 except: pass
                 view_name = re.sub(r'[\\/:*?"<>|\[\]\(\)@\s]+', '_', view_name).strip("_")
 
-            # Ensamblar partes del nombre
+            # Assemble the name parts
             parts = []
             if inc_maxfile: parts.append(max_name)
             if inc_shot:    parts.append(shot)
@@ -2647,7 +2647,7 @@ class StudioToolbar(QtWidgets.QWidget):
 
             base = "_".join(parts)
 
-            # Buscar el mayor vNNN existente para este base en la carpeta destino
+            # Find the highest existing vNNN for this base in the target folder
             rx    = re.compile(r'^' + re.escape(base) + r'_v(\d+)\.jpg$', re.IGNORECASE)
             max_v = 0
             for f in (os.listdir(thumb_dir) if os.path.isdir(thumb_dir) else []):
@@ -2670,9 +2670,9 @@ class StudioToolbar(QtWidgets.QWidget):
             print(f"STM Snap error: {e}")
 
     def cleanup(self):
-        """Detiene el polling y quita el callback de Max. Se llama al cerrar el dock;
-        sin esto el timer seguía corriendo con el toolbar cerrado y el callback
-        filePostOpen apuntaba a un widget muerto."""
+        """Stop polling and remove the Max callback. Called when the dock closes;
+        without this the timer kept running with the toolbar closed and the
+        filePostOpen callback pointed at a dead widget."""
         try: self.sync_timer.stop()
         except: pass
         try: rt.callbacks.removeScripts(id=rt.Name("STM_Sync"))
@@ -2681,7 +2681,7 @@ class StudioToolbar(QtWidgets.QWidget):
         except: pass
 
     def _load_current_max_settings(self):
-        """Solo sincroniza res/film/fps/unit — NO toca pipeline."""
+        """Only syncs res/film/fps/unit — does NOT touch the pipeline."""
         try: self._master_sync()
         except: pass
 
@@ -2689,9 +2689,9 @@ class StudioToolbar(QtWidgets.QWidget):
 # ── Pipeline Setup Dialog ─────────────────────────────────────────────────────
 class PipelineSetupDialog(QtWidgets.QDialog):
     """
-    Diálogo de configuración del pipeline.
-    - Guarda config activa en  ~/.studio-toolbar/pipeline_config.ini
-    - Guarda presets en        ~/.studio-toolbar/pipeline_presets.json
+    Pipeline setup dialog.
+    - Saves active config to  ~/.studio-toolbar/pipeline_config.ini
+    - Saves presets to        ~/.studio-toolbar/pipeline_presets.json
     """
 
     PRESETS_PATH = os.path.join(PIPE_DIR, "pipeline_presets.json")
@@ -2762,13 +2762,13 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         self.setStyleSheet(self.DIALOG_STYLE)
         self.cfg = load_pipeline_cfg()
         self._build()
-        # Instalar event filter en todos los QLineEdit del dialog
-        # para que Enter no cierre ni resetee el dialog
+        # Install an event filter on every QLineEdit in the dialog
+        # so Enter doesn't close or reset the dialog
         for child in self.findChildren(QtWidgets.QLineEdit):
             child.installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        """Consume Enter/Return en QLineEdit — no propaga al dialog."""
+        """Swallow Enter/Return in QLineEdit — don't propagate to the dialog."""
         if isinstance(obj, QtWidgets.QLineEdit):
             if event.type() == QtCore.QEvent.KeyPress:
                 if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
@@ -2792,34 +2792,34 @@ class PipelineSetupDialog(QtWidgets.QDialog):
                 json.dump(presets, f, indent=2)
         except: pass
 
-    # Sentinel para distinguir "nunca configurado" de "configurado como vacío"
+    # Sentinel to tell "never configured" from "configured as empty"
     _PSUB_UNCONFIGURED = object()
 
     def _on_psub_task_changed(self, task_name):
-        """Guarda la lista actual en el mapping, carga la del task seleccionado."""
-        # Guardar el estado del task anterior antes de cambiar
+        """Store the current list in the mapping, load the selected task's list."""
+        # Save the previous task's state before switching
         if hasattr(self, '_psub_last_task') and self._psub_last_task:
             items = [self.psub_list.item(i).text().strip()
                      for i in range(self.psub_list.count()) if self.psub_list.item(i).text().strip()]
-            # Siempre guardar, aunque sea lista vacía — así se recuerda que se borró todo
+            # Always save, even an empty list — so we remember everything was deleted
             self._psub_mapping[self._psub_last_task] = items
 
         self._psub_last_task = task_name
         self.psub_list.clear()
 
         if task_name in self._psub_mapping:
-            # Task ya configurada — cargar lo que tiene (puede ser lista vacía)
+            # Task already configured — load what it has (may be an empty list)
             for s in self._psub_mapping[task_name]:
                 self.psub_list.addItem(s)
         else:
-            # Task nunca tocada — cargar default y guardarlo ya en el mapping
+            # Task never touched — load the default and store it in the mapping now
             default = ["textures"]
             self._psub_mapping[task_name] = default
             for s in default:
                 self.psub_list.addItem(s)
 
     def _sync_psub_task_combo(self):
-        """Actualiza el combo de tasks en la sección psub cuando cambia la task list."""
+        """Update the tasks combo in the psub section when the task list changes."""
         current = self.psub_task_cb.currentText()
         tasks = [self.task_list.item(i).text().strip()
                  for i in range(self.task_list.count()) if self.task_list.item(i).text().strip()]
@@ -2830,12 +2830,12 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         self.psub_task_cb.blockSignals(False)
 
     def _current_form_data(self):
-        """Recopila los valores actuales del formulario como dict."""
+        """Collect the current form values as a dict."""
         # Flush current psub task before collecting
         if hasattr(self, '_psub_last_task') and self._psub_last_task:
             items = [self.psub_list.item(i).text().strip()
                      for i in range(self.psub_list.count()) if self.psub_list.item(i).text().strip()]
-            # Guardar siempre, incluyendo lista vacía
+            # Always save, including an empty list
             self._psub_mapping[self._psub_last_task] = items
 
         tasks = [self.task_list.item(i).text().strip()
@@ -2862,7 +2862,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         }
 
     def _apply_cfg_to_form(self, cfg):
-        """Carga un dict de config en todos los widgets del formulario."""
+        """Load a config dict into all the form widgets."""
         self.ed_drive.setText(cfg.get("root_drive", "T:"))
         self.ed_prefix.setText(cfg.get("project_prefix", "VFX-"))
         self.ed_exclude.setText(cfg.get("seq_exclude", "3D,SOURCE,FOOTAGE"))
@@ -2905,9 +2905,9 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         self._update_snap_preview()
 
     # ── build ─────────────────────────────────────────────────────────────────
-    # Layout: barra lateral de secciones + páginas apiladas + footer con presets y botones.
-    # Los nombres de los widgets (ed_drive, task_list, sub_list, psub_*, thumb_*, chk_snap_*,
-    # render_sep_cb, preset_cb, ed_preset_name) se mantienen: la lógica de guardado no cambia.
+    # Layout: section sidebar + stacked pages + footer with presets and buttons.
+    # Widget names (ed_drive, task_list, sub_list, psub_*, thumb_*, chk_snap_*,
+    # render_sep_cb, preset_cb, ed_preset_name) are kept: the save logic is unchanged.
 
     def _page(self, title, subtitle):
         w = QtWidgets.QWidget(); w.setObjectName("page")
@@ -2934,7 +2934,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         l = QtWidgets.QLabel(text); l.setObjectName("hint"); l.setWordWrap(True); return l
 
     def _list_editor(self, listw, line_edit, placeholder, label):
-        """Lista + fila [nuevo nombre][+][borrar] con íconos."""
+        """List + [new name][+][delete] row with icons."""
         box = QtWidgets.QVBoxLayout(); box.setSpacing(6)
         listw.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
         listw.itemDoubleClicked.connect(self._rename_item)
@@ -3012,7 +3012,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         card, c = self._card()
         self._psub_title = QtWidgets.QLabel(); self._psub_title.setObjectName("card_title")
         c.addWidget(self._psub_title)
-        # combo oculto: lo maneja la selección de la lista de tasks (la lógica psub lo usa)
+        # hidden combo: driven by the task list selection (used by the psub logic)
         self.psub_task_cb = QtWidgets.QComboBox(); self.psub_task_cb.setVisible(False)
         for t in tasks: self.psub_task_cb.addItem(t)
         self.psub_list = QtWidgets.QListWidget()
@@ -3110,7 +3110,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         self._add_page("Output", pg)
         self._update_snap_preview()
 
-        # ── FOOTER: presets + botones ────────────────────────────────────────
+        # ── FOOTER: presets + buttons ────────────────────────────────────────
         footer = QtWidgets.QWidget(); footer.setObjectName("footer")
         fl = QtWidgets.QHBoxLayout(footer); fl.setContentsMargins(16, 12, 16, 12); fl.setSpacing(6)
         fl.addWidget(self._field("Preset"))
@@ -3141,7 +3141,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         fl.addWidget(btn_cancel); fl.addWidget(btn_ok)
         outer.addWidget(footer)
 
-        # previews en vivo
+        # live previews
         for ed in (self.ed_drive, self.ed_prefix):
             ed.textChanged.connect(self._update_previews)
         for lw in (self.sub_list, self.psub_list, self.task_list):
@@ -3156,8 +3156,8 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         self.nav.setCurrentRow(0)
         self._update_previews()
 
-        # Nunca aplastar textos: cada botón/etiqueta conserva al menos el ancho de su texto
-        # (con la fuente real de Max), y el diálogo no se achica por debajo de su contenido.
+        # Never squash text: each button/label keeps at least the width of its text
+        # (with Max's real font), and the dialog never shrinks below its content.
         for w in [x for cls in (QtWidgets.QPushButton, QtWidgets.QLabel, QtWidgets.QCheckBox)
                   for x in self.findChildren(cls)]:
             if isinstance(w, QtWidgets.QLabel) and (w.wordWrap() or w.objectName() in ("tree", "preview")):
@@ -3178,7 +3178,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         if d: self.ed_drive.setText(os.path.normpath(d))
 
     def _on_task_selected(self, task):
-        """La selección en la lista de tasks controla qué subcarpetas se editan a la derecha."""
+        """The task list selection controls which subfolders are edited on the right."""
         if task and self.psub_task_cb.findText(task) >= 0:
             self.psub_task_cb.setCurrentText(task)
         self._psub_title.setText(f"Inside  {task or '—'} / {self._list_items(self.sub_list)[0] if self.sub_list.count() else 'scenes'}" if hasattr(self, "sub_list")
@@ -3259,7 +3259,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
 
     # ── preset helpers ────────────────────────────────────────────────────────
     def _refresh_thumb_sub_combo(self):
-        """Repuebla el combo de snapshot destination con los subfolders actuales."""
+        """Repopulate the snapshot destination combo with the current subfolders."""
         if not hasattr(self, 'thumb_sub_cb'): return
         current = self.thumb_sub_cb.currentText()
         self.thumb_sub_cb.clear()
@@ -3283,7 +3283,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
             self.preset_cb.addItem("(no presets saved)")
 
     def _update_snap_preview(self):
-        """Actualiza el label de preview del nombre del snapshot."""
+        """Update the snapshot name preview label."""
         parts = []
         if self.chk_snap_maxfile.isChecked():  parts.append("maxfile")
         if self.chk_snap_shot.isChecked():     parts.append("shot")
@@ -3314,7 +3314,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         self._save_presets(presets)
         self.ed_preset_name.clear()
         self._refresh_preset_combo()
-        # Seleccionar el preset recién guardado
+        # Select the newly saved preset
         idx = self.preset_cb.findText(name)
         if idx >= 0: self.preset_cb.setCurrentIndex(idx)
 
@@ -3341,8 +3341,8 @@ class PipelineSetupDialog(QtWidgets.QDialog):
         if not subs:
             QtWidgets.QMessageBox.warning(self, "Validation", "At least one subfolder is required.")
             return
-        # Merge con la config existente: el diálogo no conoce todas las claves
-        # (ej. vp_color_presets del botón BG) y antes las borraba al guardar.
+        # Merge with the existing config: the dialog doesn't know every key
+        # (e.g. the BG button's vp_color_presets) and used to wipe them on save.
         data = load_pipeline_cfg()
         data.update(self._current_form_data())
         save_pipeline_cfg(data)
@@ -3351,7 +3351,7 @@ class PipelineSetupDialog(QtWidgets.QDialog):
 
 # ── Dock ─────────────────────────────────────────────────────────────────────
 class STMDock(QtWidgets.QDockWidget):
-    """Dock que se destruye al cerrarlo (X) y limpia timer/callbacks del toolbar."""
+    """Dock that is destroyed when closed (X) and cleans up the toolbar timer/callbacks."""
     def closeEvent(self, event):
         w = self.widget()
         if w is not None and hasattr(w, "cleanup"):
@@ -3361,7 +3361,7 @@ class STMDock(QtWidgets.QDockWidget):
 def show_studio_toolbar():
     main  = GetQMaxMainWindow()
     title = f"Studio Toolbar for MAX  v{VERSION}"
-    # Cerrar cualquier instancia previa (actual o legacy) para no duplicar el toolbar
+    # Close any previous instance (current or legacy) so the toolbar isn't duplicated
     for child in main.findChildren(QtWidgets.QDockWidget):
         if (child.objectName() in ("STM_ToolbarDock", "Pipe3DShotManagerDock")
                 or child.windowTitle().startswith(("Studio Toolbar for MAX", "Pipe3D Shot Manager"))):
@@ -3378,8 +3378,8 @@ def show_studio_toolbar():
         QtWidgets.QDockWidget.DockWidgetMovable   |
         QtWidgets.QDockWidget.DockWidgetFloatable |
         QtWidgets.QDockWidget.DockWidgetClosable  |
-        # Título vertical a la izquierda: sigue siendo la manija para arrastrar,
-        # pero no come una franja horizontal entera de alto.
+        # Vertical title on the left: still the drag handle,
+        # but doesn't eat a full-height horizontal strip.
         QtWidgets.QDockWidget.DockWidgetVerticalTitleBar
     )
     dock.setToolTip(f"Studio Toolbar for MAX  v{VERSION} — drag this handle to move / float")
@@ -3403,14 +3403,14 @@ def show_studio_toolbar():
         }}
         QDockWidget::close-button:hover, QDockWidget::float-button:hover {{ background: #505050; }}
     """)
-    # Esquinas superiores al área top — dock ocupa todo el ancho de punta a punta
+    # Top corners to the top area — the dock spans the full width edge to edge
     main.setCorner(QtCore.Qt.TopLeftCorner,  QtCore.Qt.TopDockWidgetArea)
     main.setCorner(QtCore.Qt.TopRightCorner, QtCore.Qt.TopDockWidgetArea)
     main.addDockWidget(QtCore.Qt.TopDockWidgetArea, dock)
 
-    # Permitir re-dockeo: cuando el dock vuelve a ser top-level (flotante)
-    # y el usuario lo arrastra de vuelta, Qt lo maneja solo con DockWidgetMovable.
-    # El problema es setFixedHeight — al flotar necesita altura libre, al dockear vuelve fija.
+    # Allow re-docking: when the dock becomes top-level (floating)
+    # and the user drags it back, Qt handles it with DockWidgetMovable.
+    # The issue is setFixedHeight — floating needs free height, docking makes it fixed again.
     def _on_top_level_changed(floating):
         if floating:
             mgr.setMinimumHeight(0)

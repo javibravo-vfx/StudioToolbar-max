@@ -33,31 +33,35 @@ Designed for VFX studios — manages resolution, film size, FPS, pipeline naviga
 
 ## Installation
 
-1. Copy this repo to your studio's shared drive, e.g.:
+1. **Copy the repo to your studio drive**, e.g.:
    ```
    T:\.studio-toolbar\max\
    ```
+   (`dev/` and `docs/` are not needed there.)
 
-2. Edit the **USER CONFIG** block at the top of `StudioToolbar-max.py` to match your pipeline:
+2. **Make it start with 3ds Max** — copy `startup/StudioToolbar-max_Start.ms` into a Max startup folder:
+
+   | Scope | Folder |
+   |---|---|
+   | Per user (no admin) | `%LOCALAPPDATA%\Autodesk\3dsMax\<version> - 64bit\ENU\scripts\startup\` |
+   | All users (admin) | `C:\Program Files\Autodesk\3ds Max <version>\scripts\Startup\` |
+
+   Restart Max — the toolbar docks at the top. If the toolbar lives somewhere other than
+   `T:\.studio-toolbar\max\`, edit `TOOLBAR_PATH` inside the startup file.
+
+3. **Configure your pipeline** with the ⚙ Setup button (root drive, project prefix, tasks, folders,
+   snapshots). Settings are saved per user in `%USERPROFILE%\.studio-toolbar\`.
+   The **USER CONFIG** block at the top of `StudioToolbar-max.py` only holds the defaults used
+   the first time, and the paths to the helper scripts if you move them:
    ```python
-   CFG_ROOT_DRIVE     = "T:"          # where your projects live
-   CFG_PROJECT_PREFIX = "VFX-"        # folder prefix, e.g. VFX-MOR
-   CFG_TASKS          = [...]          # your department folders
+   PATH_OVERSCAN  = r"T:\.studio-toolbar\max\maintools\STM_Overscan.ms"
+   PATH_TOOLS_DIR = r"T:\.studio-toolbar\max\tools"
    ```
 
-3. Update the tool paths to point to your copies of the helper scripts:
-   ```python
-   PATH_OVERSCAN    = r"T:\.studio-toolbar\max\maintools\STM_Overscan.ms"
-   PATH_IMAGE_PLANE = r"T:\.studio-toolbar\max\maintools\STM_ImagePlane.ms"
-   # etc.
-   ```
-
-4. Run from MAXScript:
-   ```maxscript
-   python.ExecuteFile @"T:\.studio-toolbar\max\StudioToolbar-max.py"
-   ```
-
-5. Or add a toolbar button in Max pointing to that MAXScript line.
+To launch it manually instead (e.g. to test a new version):
+```maxscript
+python.ExecuteFile @"T:\.studio-toolbar\max\StudioToolbar-max.py"
+```
 
 ---
 
@@ -75,7 +79,10 @@ maintools/               ← MAXScript helpers called by toolbar buttons
 tools/                   ← optional extra tools
   STM_CarRig.ms
   STM_SuperAttach.ms
-docs/                    ← screenshots and documentation
+startup/                 ← copy into a Max scripts\startup folder (see Installation)
+  StudioToolbar-max_Start.ms
+docs/                    ← screenshots and documentation (not needed on the studio drive)
+dev/                     ← offline test harness (not needed on the studio drive)
 ```
 
 ---
@@ -126,7 +133,7 @@ Example: `MOR_010_0010_lighting_v003_A_cam_001_v001.jpg`
 
 ## Version
 
-Current: **v2.5.35**  
+Current: **v2.6.3**  
 See [CHANGELOG.md](CHANGELOG.md) for history.
 
 ---

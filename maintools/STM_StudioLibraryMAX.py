@@ -2,18 +2,18 @@
 """
 StudioLibrary MAX v2.0.0
 
-Cambios v0.11.16:
-- UX 1: + New Folder movido a la barra superior IZQUIERDA. + Save Pose permanece derecha.
-- UX 2: Formulario Save Pose: Name pegado a su input (spacing=2), Comment pegado a su input,
-        sin distancias excesivas entre campos.
-- UX 5: Key / Mirror / Additive checkboxes más grandes (indicador 16px, font 11pt).
-- UX 6: Filter T R S checkboxes bajo Additive para filtrar qué canales se aplican.
-- UX 7: Botón "Details ?" al pie del panel — abre ventana con lista de objetos de la pose.
-- FUNC 3 FIX: Thumbnail usa Tools > Screen Capture > captureStillImage via MAXScript
-              (equivalente al menu Tools > Screen Capture > Capture Still Image de MAX 2025).
-              Guarda en %TEMP% y lo carga como preview. Sin Arnold.
-- FUNC 4 FIX: Key usa 'at time currentTime animate on (...)' — sintaxis correcta de MAXScript
-              para crear keyframes en el frame actual sin depender de controllers individuales.
+Changes v0.11.16:
+- UX 1: + New Folder moved to the top bar, LEFT side. + Save Pose stays on the right.
+- UX 2: Save Pose form: Name sits right above its input (spacing=2), same for Comment,
+        no excessive gaps between fields.
+- UX 5: Larger Key / Mirror / Additive checkboxes (16px indicator, 11pt font).
+- UX 6: Filter T R S checkboxes under Additive to choose which channels are applied.
+- UX 7: "Details" button at the bottom of the panel â€” opens a window listing the pose objects.
+- FUNC 3 FIX: Thumbnail uses Tools > Screen Capture > captureStillImage via MAXScript
+              (equivalent to the MAX 2025 menu Tools > Screen Capture > Capture Still Image).
+              Saves to %TEMP% and loads it as the preview. No Arnold.
+- FUNC 4 FIX: Key uses 'at time currentTime animate on (...)' â€” the correct MAXScript syntax
+              to create keyframes on the current frame without relying on individual controllers.
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -36,7 +36,7 @@ rt = pymxs.runtime
 __version__ = "2.0.0"
 
 # -------------------------------------------------------------
-#  Constantes de UI
+#  UI constants
 # -------------------------------------------------------------
 
 THUMB_W      = 148
@@ -47,7 +47,7 @@ ITEM_H       = THUMB_H + 40
 POSE_NAME_PT = 11
 FORM_TEXT_PT = 9
 
-# Paleta gris neutro
+# Neutral gray palette
 C_BG        = "#1C1C1C"
 C_BG2       = "#222222"
 C_BG3       = "#191919"
@@ -70,7 +70,7 @@ PLACEHOLDER_FG = "#3A3A3A"
 
 
 # -------------------------------------------------------------
-#  Settings persistentes
+#  Persistent settings
 # -------------------------------------------------------------
 
 def _settings_path():
@@ -99,7 +99,7 @@ def save_state(library_path, current_project=""):
 
 
 # -------------------------------------------------------------
-#  Helpers de transformacion
+#  Transform helpers
 # -------------------------------------------------------------
 
 def quat_to_list(q):
@@ -117,8 +117,8 @@ def apply_node_transform(node, pos_list, rot_list, scale_list,
                          mirror=False, additive=False, key=False,
                          do_pos=True, do_rot=True, do_scale=True):
     """
-    FIX: rt.execute() NO acepta 'local' a nivel raiz — debe ir en bloque ( ).
-    Sin key: pymxs directo. Con key: MAXScript en bloque ( ).
+    FIX: rt.execute() does NOT accept 'local' at the top level â€” it must be inside a ( ) block.
+    Without key: direct pymxs. With key: MAXScript in a ( ) block.
     """
     try:
         px = -pos_list[0] if mirror else pos_list[0]
@@ -146,7 +146,7 @@ def apply_node_transform(node, pos_list, rot_list, scale_list,
                 if do_pos:   node.pos      = pos
             return
 
-        # Con key: MAXScript en bloque ( ) para poder usar local
+        # With key: MAXScript in a ( ) block so 'local' can be used
         n_name = node.name.replace('"', '\\"')
         rx = -rot_list[0] if mirror else rot_list[0]
         ry, rz = rot_list[1], rot_list[2]
@@ -183,24 +183,24 @@ def apply_node_transform(node, pos_list, rot_list, scale_list,
         rt.execute(mxs)
 
     except Exception as e:
-        print(f"[StudioLibMAX] Error en '{node.name}': {e}")
+        print(f"[StudioLibMAX] Error on '{node.name}': {e}")
 
 
 def capture_viewport_to_file(out_path):
     """
-    Captura el viewport activo usando gw.getViewportDib() con .filename + save.
-    Confirmado funcional en MAX 2025:
+    Captures the active viewport using gw.getViewportDib() with .filename + save.
+    Confirmed working in MAX 2025:
 
       img = gw.getViewportDib()
-      img.filename = "C:/ruta/snapshot.png"
+      img.filename = "C:/path/snapshot.png"
       save img
 
-    rt.execute() requiere bloque ( ) para usar variables locales.
+    rt.execute() requires a ( ) block to use local variables.
     """
     out_fwd = out_path.replace("\\", "/")
     captured = False
 
-    # Metodo A: gw.getViewportDib() con .filename — confirmado MAX 2025
+    # Method A: gw.getViewportDib() with .filename â€” confirmed in MAX 2025
     if not captured:
         try:
             mxs = (
@@ -217,7 +217,7 @@ def capture_viewport_to_file(out_path):
         except Exception as e:
             print(f"[thumb A gw+filename+save] {e}")
 
-    # Metodo B: pymxs directo — asignar filename al objeto bitmap y save
+    # Method B: direct pymxs â€” assign filename to the bitmap object and save
     if not captured:
         try:
             img = rt.gw.getViewportDib()
@@ -230,7 +230,7 @@ def capture_viewport_to_file(out_path):
         except Exception as e:
             print(f"[thumb B pymxs gw+save] {e}")
 
-    # Metodo C: grabView() con .filename dentro de bloque ( )
+    # Method C: grabView() with .filename inside a ( ) block
     if not captured:
         try:
             mxs = f'( local b = grabView() ; b.filename = "{out_fwd}" ; save b )'
@@ -263,12 +263,12 @@ def make_pose_icon(preview_path):
         painter = QtGui.QPainter(pix)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         painter.fillRect(0, 0, THUMB_W, THUMB_H, QtGui.QColor(PLACEHOLDER_BG))
-        # Usar imagen SVG/text con font metrics para centrado exacto
+        # Use SVG/text image with font metrics for exact centering
         font = QtGui.QFont("Segoe UI", 26)
         painter.setFont(font)
         fm = QtGui.QFontMetrics(font)
-        icon_char = "??"
-        # boundingRect da las dimensiones reales del glifo
+        icon_char = "â—‡"   # placeholder glyph for poses without a thumbnail
+        # boundingRect gives the actual glyph dimensions
         br = fm.boundingRect(icon_char)
         x = (THUMB_W - br.width())  // 2 - br.left()
         y = (THUMB_H - br.height()) // 2 - br.top()
@@ -284,7 +284,7 @@ def make_pose_icon(preview_path):
 
 
 # -------------------------------------------------------------
-#  Helper: label de sección
+#  Helper: section label
 # -------------------------------------------------------------
 
 def make_section_label(text):
@@ -297,7 +297,7 @@ def make_section_label(text):
 
 
 def make_field_label(text):
-    """Label de campo dentro del formulario Save Pose."""
+    """Field label inside the Save Pose form."""
     lbl = QtWidgets.QLabel(text)
     lbl.setStyleSheet(
         f"color: {C_TEXT_DIM}; font-size: 9pt; font-weight: bold; "
@@ -307,7 +307,7 @@ def make_field_label(text):
 
 
 # -------------------------------------------------------------
-#  Dialogo: lista de objetos de la pose + rename individual + batch rename
+#  Dialog: pose object list + single rename + batch rename
 # -------------------------------------------------------------
 
 class PoseDetailsDialog(QtWidgets.QDialog):
@@ -317,7 +317,7 @@ class PoseDetailsDialog(QtWidgets.QDialog):
         self.pose_name  = pose_name
         self.node_names = list(node_names)
 
-        self.setWindowTitle(f"Pose Details — {pose_name}")
+        self.setWindowTitle(f"Pose Details â€” {pose_name}")
         self.resize(380, 500)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
@@ -388,8 +388,8 @@ class PoseDetailsDialog(QtWidgets.QDialog):
         hdr.setStyleSheet(f"color: {C_TEXT_DIM}; font-size: 9pt;")
         lay.addWidget(hdr)
 
-        # -- Lista con botón Rename por fila ----------------------
-        # Usamos QListWidget + un QWidget por item vía setItemWidget
+        # -- List with a Rename button per row ------------------
+        # QListWidget + one QWidget per item via setItemWidget
         self.lst = QtWidgets.QListWidget()
         self.lst.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         lay.addWidget(self.lst, 1)
@@ -426,7 +426,7 @@ class PoseDetailsDialog(QtWidgets.QDialog):
 
         lay.addWidget(batch_box)
 
-        # -- Botón Close ------------------------------------------
+        # -- Close button -----------------------------------------
         close_btn = QtWidgets.QPushButton("Close")
         close_btn.setObjectName("primary")
         close_btn.clicked.connect(self.accept)
@@ -453,7 +453,7 @@ class PoseDetailsDialog(QtWidgets.QDialog):
             self.lst.setItemWidget(item, row_w)
 
     def _rename_one(self, old_name):
-        """Renombra un objeto individual en pose_data.json."""
+        """Renames a single object in pose_data.json."""
         new_name, ok = QtWidgets.QInputDialog.getText(
             self, "Rename Object", f"New name for '{old_name}':", text=old_name
         )
@@ -462,14 +462,14 @@ class PoseDetailsDialog(QtWidgets.QDialog):
         self._apply_rename({old_name: new_name.strip()})
 
     def _batch_preview(self):
-        """Muestra en un mensaje cómo quedarían los nombres tras el batch rename."""
+        """Shows a message with what the names would become after the batch rename."""
         mapping = self._build_mapping()
         if not mapping:
             QtWidgets.QMessageBox.information(
                 self, "Batch Rename Preview", "No matches found."
             )
             return
-        lines = [f"  {old}  ?  {new}" for old, new in mapping.items()]
+        lines = [f"  {old}  â†’  {new}" for old, new in mapping.items()]
         QtWidgets.QMessageBox.information(
             self, "Batch Rename Preview",
             f"{len(lines)} object(s) will be renamed:\n\n" + "\n".join(lines)
@@ -509,25 +509,25 @@ class PoseDetailsDialog(QtWidgets.QDialog):
         return {k: v for k, v in mapping.items() if k != v}
 
     def _apply_rename(self, mapping):
-        """Escribe el mapping viejo?nuevo en pose_data.json y actualiza la UI."""
+        """Writes the oldâ†’new mapping to pose_data.json and refreshes the UI."""
         json_file = os.path.join(self.pose_path, "pose_data.json")
         if not os.path.exists(json_file):
             return
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Renombrar en nodes
+            # Rename in nodes
             for node in data.get("nodes", []):
                 if node["name"] in mapping:
                     node["name"] = mapping[node["name"]]
-            # Renombrar en metadata.contains
+            # Rename in metadata.contains
             contains = data.get("metadata", {}).get("contains", "")
             if contains:
                 parts = [mapping.get(p.strip(), p.strip()) for p in contains.split(",")]
                 data["metadata"]["contains"] = ",".join(parts)
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
-            # Actualizar lista local
+            # Update local list
             self.node_names = [mapping.get(n, n) for n in self.node_names]
             self._populate_list()
             renamed = len(mapping)
@@ -539,18 +539,18 @@ class PoseDetailsDialog(QtWidgets.QDialog):
 
 
 # -------------------------------------------------------------
-#  Dialogo: Batch Rename Objects en múltiples poses
+#  Dialog: Batch Rename Objects across multiple poses
 # -------------------------------------------------------------
 
 class BatchRenameMultiDialog(QtWidgets.QDialog):
     """
-    Aplica un Find & Replace de nombres de objetos en múltiples poses a la vez.
-    Muestra un preview de todos los cambios antes de confirmar.
+    Applies a Find & Replace on object names across multiple poses at once.
+    Shows a preview of all changes before confirming.
     """
     def __init__(self, pose_paths, parent=None):
         super().__init__(parent)
         self.pose_paths = pose_paths
-        self.setWindowTitle(f"Batch Rename Objects — {len(pose_paths)} poses")
+        self.setWindowTitle(f"Batch Rename Objects â€” {len(pose_paths)} poses")
         self.resize(460, 520)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
@@ -648,12 +648,12 @@ class BatchRenameMultiDialog(QtWidgets.QDialog):
         prev_lay = QVBoxLayout(prev_box)
         self.preview_txt = QtWidgets.QPlainTextEdit()
         self.preview_txt.setReadOnly(True)
-        self.preview_txt.setPlaceholderText("Click Preview to see changes…")
+        self.preview_txt.setPlaceholderText("Click Preview to see changesâ€¦")
         self.preview_txt.setMinimumHeight(140)
         prev_lay.addWidget(self.preview_txt)
         lay.addWidget(prev_box, 1)
 
-        # Botones Apply / Close
+        # Apply / Close buttons
         bot_row = QHBoxLayout()
         self.apply_btn = QtWidgets.QPushButton("Apply to All Poses")
         self.apply_btn.setObjectName("primary")
@@ -669,7 +669,7 @@ class BatchRenameMultiDialog(QtWidgets.QDialog):
     # ---------------------------------------------
 
     def _build_all_mappings(self):
-        """Construye el mapping para cada pose y lo guarda en self._last_mapping."""
+        """Builds the mapping for each pose and stores it in self._last_mapping."""
         find    = self.find_edit.text()
         replace = self.replace_edit.text()
         case    = self.case_chk.isChecked()
@@ -714,7 +714,7 @@ class BatchRenameMultiDialog(QtWidgets.QDialog):
             pose_name = os.path.basename(path).replace(".pose", "")
             lines.append(f"-- {pose_name} --")
             for old, new in mapping.items():
-                lines.append(f"   {old}  ?  {new}")
+                lines.append(f"   {old}  â†’  {new}")
                 total += 1
             lines.append("")
         self.preview_txt.setPlainText(
@@ -758,15 +758,15 @@ class BatchRenameMultiDialog(QtWidgets.QDialog):
             self, "Done",
             f"Renamed successfully in {done} pose(s)."
         )
-        self.preview_txt.setPlainText(f"Done — {done} pose(s) updated.")
+        self.preview_txt.setPlainText(f"Done â€” {done} pose(s) updated.")
 
 
 # -------------------------------------------------------------
-#  Widget de comment editable — Enter termina sin salto de linea
+#  Editable comment widget â€” Enter finishes without a line break
 # -------------------------------------------------------------
 
 class _CommentEdit(QtWidgets.QPlainTextEdit):
-    """QPlainTextEdit donde Enter/Return pierde el foco en lugar de insertar \n."""
+    """QPlainTextEdit where Enter/Return drops focus instead of inserting \n."""
     def keyPressEvent(self, event):
         if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
             self.clearFocus()
@@ -781,28 +781,28 @@ class _CommentEdit(QtWidgets.QPlainTextEdit):
 class StudioLibraryMaxUI(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"STM  ·  StudioLibrary MAX  v{__version__}")
+        self.setWindowTitle(f"STM  Â·  StudioLibrary MAX  v{__version__}")
         self.resize(1200, 760)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.setObjectName("StudioLibMax")
 
         self.library_path        = None
-        self.current_project     = None   # ruta a la carpeta del proyecto activo
+        self.current_project     = None   # path to the active project folder
         self.current_folder_path = None
         self.current_pose_path   = None
         self.folder_colors       = {}
         self.color_config_path   = None
-        self._current_pose_nodes = []   # cache para Details dialog
+        self._current_pose_nodes = []   # cache for the Details dialog
 
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 4)
         main_layout.setSpacing(6)
 
-        # -- Fila de proyecto ------------------------------------
+        # -- Project row -----------------------------------------
         self._proj_stack = QtWidgets.QStackedWidget()
         self._proj_stack.setFixedHeight(34)
 
-        # — Página 0: sin proyectos — botón New Project celeste —
+        # â€” Page 0: no projects â€” light-blue New Project button â€”
         page_empty = QtWidgets.QWidget()
         pe_lay = QHBoxLayout(page_empty)
         pe_lay.setContentsMargins(0, 0, 0, 0)
@@ -815,7 +815,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         pe_lay.addStretch(1)
         self._proj_stack.addWidget(page_empty)
 
-        # — Página 1: con proyectos — combo + 3 botones con texto —
+        # â€” Page 1: has projects â€” combo + 3 text buttons â€”
         page_active = QtWidgets.QWidget()
         pa_lay = QHBoxLayout(page_active)
         pa_lay.setContentsMargins(0, 0, 0, 0)
@@ -867,7 +867,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         )
         pa_lay.addWidget(_lbl1)
         pa_lay.addSpacing(6)
-        pa_lay.addWidget(self.project_combo, 3)   # stretch=3: toma la mayor parte del espacio
+        pa_lay.addWidget(self.project_combo, 3)   # stretch=3: takes most of the space
         pa_lay.addWidget(self.new_proj_btn)
         pa_lay.addWidget(self.ren_proj_btn)
         pa_lay.addWidget(self.del_proj_btn)
@@ -875,7 +875,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
         main_layout.addWidget(self._proj_stack)
 
-        # -- Barra superior: + New Folder izquierda | + Save Pose derecha --
+        # -- Top bar: + New Folder left | + Save Pose right --------------
         top_layout = QHBoxLayout()
         top_layout.setSpacing(6)
 
@@ -886,14 +886,14 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.quick_save_btn = QtWidgets.QPushButton("+  Save Pose")
         self.quick_save_btn.setObjectName("action_btn")
         self.quick_save_btn.clicked.connect(self.show_new_pose_form)
-        self.quick_save_btn.setToolTip("Guarda una pose de los objetos seleccionados")
+        self.quick_save_btn.setToolTip("Save a pose from the selected objects")
 
         top_layout.addWidget(self.new_folder_btn)
         top_layout.addStretch(1)
         top_layout.addWidget(self.quick_save_btn)
         main_layout.addLayout(top_layout)
 
-        # -- Barra de búsqueda -----------------------------------
+        # -- Search bar ------------------------------------------
         self.search_bar = QtWidgets.QLineEdit()
         self.search_bar.setPlaceholderText("Search poses...")
         self.search_bar.setFixedHeight(28)
@@ -903,7 +903,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         # -- Splitter --------------------------------------------
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
-        # -- Columna 1: Folders ----------------------------------
+        # -- Column 1: Folders -----------------------------------
         self.sidebar = QTreeWidget()
         self.sidebar.setHeaderHidden(True)
         self.sidebar.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -912,7 +912,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         )
         self.sidebar.itemClicked.connect(self.on_folder_selected)
         self.sidebar.mousePressEvent = self.sidebar_mouse_press
-        # Drop de poses sobre carpetas
+        # Dropping poses onto folders
         self.sidebar.setAcceptDrops(True)
         self.sidebar.setDropIndicatorShown(True)
         self.sidebar.dragEnterEvent = self._sidebar_drag_enter
@@ -928,7 +928,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         folder_panel.setMinimumWidth(180)
         splitter.addWidget(folder_panel)
 
-        # -- Columna 2: Poses ------------------------------------
+        # -- Column 2: Poses -------------------------------------
         self.items_view = QtWidgets.QListWidget()
         self.items_view.setViewMode(QtWidgets.QListView.IconMode)
         self.items_view.setIconSize(QtCore.QSize(THUMB_W, THUMB_H))
@@ -944,7 +944,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.items_view.itemClicked.connect(self.on_pose_selected)
         self.items_view.itemDoubleClicked.connect(self.apply_selected_pose)
         self.items_view.mousePressEvent = self.items_view_mouse_press
-        # Drag desde el panel de poses
+        # Drag from the poses panel
         self.items_view.setDragEnabled(True)
         self.items_view.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
         self.items_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
@@ -957,14 +957,14 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         pl.addWidget(self.items_view)
         splitter.addWidget(poses_panel)
 
-        # -- Columna 3: Details ----------------------------------
+        # -- Column 3: Details -----------------------------------
         self.preview_panel = QtWidgets.QWidget()
         self.preview_layout = QVBoxLayout(self.preview_panel)
-        # Sin AlignTop: el stretch controla la distribución vertical
+        # No AlignTop: stretch controls the vertical distribution
         self.preview_layout.setSpacing(6)
         self.preview_layout.setContentsMargins(4, 0, 4, 4)
 
-        # Widgets persistentes del panel derecho
+        # Persistent widgets of the right panel
         self.preview_label = QtWidgets.QLabel("No preview")
         self.preview_label.setFixedSize(230, 152)
         self.preview_label.setAlignment(QtCore.Qt.AlignCenter)
@@ -972,12 +972,12 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             f"border:1px solid {C_BORDER}; background-color:{C_BG3}; border-radius:5px;"
         )
 
-        # Boton Load — debajo del preview, mismo estilo que Library...
-        self.load_thumb_btn = QtWidgets.QPushButton("Load image…")
+        # Load button â€” below the preview, same style as Library...
+        self.load_thumb_btn = QtWidgets.QPushButton("Load imageâ€¦")
         self.load_thumb_btn.setObjectName("lib_btn")
         self.load_thumb_btn.setFixedHeight(22)
         self.load_thumb_btn.clicked.connect(self.load_thumbnail_for_pose)
-        self.load_thumb_btn.setToolTip("Cargar imagen como thumbnail de la pose")
+        self.load_thumb_btn.setToolTip("Load an image as the pose thumbnail")
 
         self.info_box = QGroupBox("Pose Info")
         self.info_box.setSizePolicy(
@@ -992,7 +992,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.created_info  = QtWidgets.QLineEdit(); self.created_info.setReadOnly(True); self.created_info.setStyleSheet(_info_style)
         self.contains_info = QtWidgets.QLineEdit(); self.contains_info.setReadOnly(True); self.contains_info.setStyleSheet(_info_style)
         self.comment_info  = _CommentEdit()
-        # editable — Enter termina la edicion (no agrega salto de linea)
+        # editable â€” Enter ends editing (does not add a line break)
         self.comment_info.setMinimumHeight(36)
         self.comment_info.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
@@ -1004,7 +1004,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         info_layout.addRow("Contains:", self.contains_info)
         info_layout.addRow("Comment:",  self.comment_info)
 
-        # Options: Key / Mirror / Additive (checkboxes más grandes)
+        # Options: Key / Mirror / Additive (larger checkboxes)
         # + Filter T R S
         # + Details button
         self.options_box = QGroupBox("Options")
@@ -1027,7 +1027,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         opts_v.addWidget(self.opt_mirror)
         opts_v.addWidget(self.opt_additive)
 
-        # Separador fino
+        # Thin separator
         sep = QtWidgets.QFrame()
         sep.setFrameShape(QtWidgets.QFrame.HLine)
         sep.setStyleSheet(f"color: {C_BORDER}; background: {C_BORDER}; border: none; max-height:1px;")
@@ -1058,7 +1058,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.apply_btn.setMinimumHeight(34)
         self.apply_btn.clicked.connect(self.apply_selected_pose)
 
-        # Boton Details (abre ventana con lista de objetos)
+        # Details button (opens a window with the object list)
         self.details_btn = QtWidgets.QPushButton("Details")
         self.details_btn.setObjectName("details_btn")
         self.details_btn.setFixedHeight(26)
@@ -1082,7 +1082,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
         main_layout.addWidget(splitter, 1)
 
-        # -- Status bar + Library a la derecha -------------------
+        # -- Status bar + Library on the right -------------------
         status_layout = QHBoxLayout()
         status_layout.setContentsMargins(4, 0, 6, 0)
         status_layout.setSpacing(14)
@@ -1096,7 +1096,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             f"color: {C_TEXT_DIM}; font-size: 9pt; background: transparent;"
         )
 
-        self.load_library_btn = QtWidgets.QPushButton("Library…")
+        self.load_library_btn = QtWidgets.QPushButton("Libraryâ€¦")
         self.load_library_btn.setObjectName("lib_btn")
         self.load_library_btn.clicked.connect(self.select_library_folder)
 
@@ -1113,17 +1113,17 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
                                restore_project=state["current_project"])
 
     # ---------------------------------------------
-    #  Panel derecho
+    #  Right panel
     # ---------------------------------------------
 
     def _clear_preview_layout(self):
         """
-        Elimina todos los items del preview_layout (widgets Y sub-layouts).
-        - Widgets persistentes: se sacan del layout con setParent(None).
-        - Widgets temporales: se destruyen con deleteLater().
-        - Sub-layouts (ej. QHBoxLayout de botones Save/Cancel): se vacian
-          recursivamente y se destruyen — si no se hace esto quedan flotando
-          detras del panel.
+        Removes all items from preview_layout (widgets AND sub-layouts).
+        - Persistent widgets: taken out of the layout with setParent(None).
+        - Temporary widgets: destroyed with deleteLater().
+        - Sub-layouts (e.g. the Save/Cancel QHBoxLayout): emptied
+          recursively and destroyed â€” otherwise they are left floating
+          behind the panel.
         """
         persistent = {
             self.preview_label, self.load_thumb_btn, self.info_box,
@@ -1148,17 +1148,17 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
     def _build_default_preview_panel(self):
         self._clear_preview_layout()
-        # Fijos arriba: preview + botones thumb + info (info crece con stretch)
+        # Fixed at top: preview + thumb buttons + info (info grows with stretch)
         self.preview_layout.addWidget(self.preview_label, 0, QtCore.Qt.AlignHCenter)
         self.preview_layout.addWidget(self._make_thumb_btn_row())
-        self.preview_layout.addWidget(self.info_box, 1)   # stretch=1: info_box absorbe espacio libre
-        # Fijos abajo: options + botones
+        self.preview_layout.addWidget(self.info_box, 1)   # stretch=1: info_box absorbs free space
+        # Fixed at bottom: options + buttons
         self.preview_layout.addWidget(self.options_box)
         self.preview_layout.addWidget(self.apply_btn)
         self.preview_layout.addWidget(self.details_btn)
 
     def _make_thumb_btn_row(self):
-        """Fila con Load Image + Generate Thumbnail para el panel Details."""
+        """Row with Load Image + Generate Thumbnail for the Details panel."""
         c = QtWidgets.QWidget()
         row = QHBoxLayout(c)
         row.setContentsMargins(0, 0, 0, 0)
@@ -1167,7 +1167,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         gt.setObjectName("lib_btn")
         gt.setFixedHeight(22)
         gt.clicked.connect(self._generate_thumbnail_for_existing_pose)
-        li = QtWidgets.QPushButton("Load Image…")
+        li = QtWidgets.QPushButton("Load Imageâ€¦")
         li.setObjectName("lib_btn")
         li.setFixedHeight(22)
         li.clicked.connect(self.load_thumbnail_for_pose)
@@ -1188,7 +1188,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self._current_pose_nodes = []
 
     # ---------------------------------------------
-    #  Estilo
+    #  Style
     # ---------------------------------------------
 
     def apply_style(self):
@@ -1422,7 +1422,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         """)
 
     # ---------------------------------------------
-    #  Biblioteca
+    #  Library
     # ---------------------------------------------
 
     def select_library_folder(self):
@@ -1449,11 +1449,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
     def _refresh_project_combo(self, select_project=""):
         """
-        Recarga el combo con los proyectos (subcarpetas de la library).
-        Si no hay proyectos ? muestra página 0 (botón New Project destacado).
-        Si hay proyectos    ? muestra página 1 (combo + botones).
-        Los proyectos son SOLO subcarpetas directas de la library que NO
-        contienen poses directamente (son contenedores de folders).
+        Reloads the combo with the projects (library subfolders).
+        No projects  â†’ shows page 0 (highlighted New Project button).
+        Has projects â†’ shows page 1 (combo + buttons).
+        Projects are ONLY direct subfolders of the library that do NOT
+        contain poses directly (they are folder containers).
         """
         self.project_combo.blockSignals(True)
         self.project_combo.clear()
@@ -1470,19 +1470,19 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         )
 
         if not projects:
-            # Sin proyectos — mostrar botón destacado
+            # No projects â€” show highlighted button
             self.project_combo.blockSignals(False)
             self._proj_stack.setCurrentIndex(0)
             self.current_project = None
             self.populate_sidebar()
             return
 
-        # Con proyectos — mostrar combo
+        # Has projects â€” show combo
         self._proj_stack.setCurrentIndex(1)
         for nm in projects:
             self.project_combo.addItem(nm, os.path.join(self.library_path, nm))
 
-        # Seleccionar proyecto guardado, o el primero
+        # Select the saved project, or the first one
         idx = 0
         if select_project:
             for i in range(self.project_combo.count()):
@@ -1494,15 +1494,15 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self._on_project_changed(idx)
 
     def _on_project_changed(self, index):
-        """Cambia el proyecto activo y recarga el sidebar."""
+        """Switches the active project and reloads the sidebar."""
         proj_path = self.project_combo.itemData(index) if index >= 0 else ""
         self.current_project = proj_path or None
-        # El sidebar muestra las carpetas del proyecto activo (o de la library raíz)
+        # The sidebar shows the folders of the active project (or the library root)
         self.populate_sidebar()
         save_state(self.library_path or "", self.current_project or "")
 
     def _new_project(self):
-        """Crea una nueva subcarpeta-proyecto en la library."""
+        """Creates a new project subfolder in the library."""
         if not self.library_path:
             QtWidgets.QMessageBox.warning(self, "Warning", "Select a library first.")
             return
@@ -1517,7 +1517,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self._refresh_project_combo(path)
 
     def _rename_project(self):
-        """Renombra el proyecto activo."""
+        """Renames the active project."""
         if not self.current_project:
             QtWidgets.QMessageBox.warning(self, "Warning", "Select a project first.")
             return
@@ -1535,7 +1535,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self._refresh_project_combo(new_path)
 
     def _delete_project(self):
-        """Borra el proyecto activo con confirmación."""
+        """Deletes the active project after confirmation."""
         if not self.current_project:
             QtWidgets.QMessageBox.warning(self, "Warning", "Select a project first.")
             return
@@ -1555,8 +1555,8 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.sidebar.clear()
         self.items_view.clear()
         self.reset_preview_panel()
-        # Solo mostrar carpetas si hay un proyecto activo
-        # Nunca usar la library raíz directamente (evita mezcla proyectos/folders)
+        # Only show folders if there is an active project
+        # Never use the library root directly (avoids mixing projects/folders)
         if not self.current_project or not os.path.isdir(self.current_project):
             return
         for name in sorted(os.listdir(self.current_project)):
@@ -1635,7 +1635,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             it.setHidden(text.lower() not in it.text().lower())
 
     # ---------------------------------------------
-    #  Selección de pose
+    #  Pose selection
     # ---------------------------------------------
 
     def on_pose_selected(self, item):
@@ -1677,13 +1677,13 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
                 cnt = len(contains.split(",")) if contains else 0
                 self.contains_info.setText(f"{cnt} object{'s' if cnt != 1 else ''}")
                 self.comment_info.setPlainText(m.get("comment", ""))
-                # Conectar guardado automático al editar el comment
+                # Hook up auto-save when the comment is edited
                 try:
                     self.comment_info.textChanged.disconnect()
                 except Exception:
                     pass
                 self.comment_info.textChanged.connect(self._save_comment)
-                # Guardar lista de nodos para Details
+                # Store node list for Details
                 nodes_data = d.get("nodes", [])
                 self._current_pose_nodes = [nd["name"] for nd in nodes_data]
             except Exception as e:
@@ -1698,7 +1698,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         QtWidgets.QListWidget.mousePressEvent(self.items_view, event)
 
     # ---------------------------------------------
-    #  DETALLES de la pose (ventana flotante)
+    #  Pose DETAILS (floating window)
     # ---------------------------------------------
 
     def show_pose_details(self):
@@ -1710,7 +1710,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         dlg.exec()
 
     # ---------------------------------------------
-    #  APLICAR POSE
+    #  APPLY POSE
     # ---------------------------------------------
 
     def apply_selected_pose(self):
@@ -1739,7 +1739,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
         applied = 0
         missing = []
-        # NOTA: suspendEditing() bloquea animate on — NO se usa cuando key=True
+        # NOTE: suspendEditing() blocks animate on â€” NOT used when key=True
         if not do_key:
             rt.suspendEditing()
         try:
@@ -1774,7 +1774,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.status_bar.showMessage(msg)
 
     # ---------------------------------------------
-    #  GUARDAR POSE
+    #  SAVE POSE
     # ---------------------------------------------
 
     def show_new_pose_form(self):
@@ -1787,7 +1787,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
         # -- Thumbnail preview -------------------------------------
         self.new_pose_preview_label = QtWidgets.QLabel("No thumbnail")
-        # Cuadrado: ancho = alto. Se actualiza en resizeEvent si hace falta.
+        # Square: width = height. Updated in resizeEvent if needed.
         self.new_pose_preview_label.setMinimumHeight(THUMB_W)
         self.new_pose_preview_label.setMaximumHeight(THUMB_W)
         self.new_pose_preview_label.setSizePolicy(
@@ -1799,7 +1799,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         )
         self.preview_layout.addWidget(self.new_pose_preview_label)
 
-        # Dos botones bajo el preview — mismo estilo lib_btn
+        # Two buttons below the preview â€” same lib_btn style
         thumb_btns = QtWidgets.QWidget()
         thumb_btns_row = QHBoxLayout(thumb_btns)
         thumb_btns_row.setContentsMargins(0, 0, 0, 0)
@@ -1808,7 +1808,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.gen_thumb_btn.setObjectName("lib_btn")
         self.gen_thumb_btn.setFixedHeight(22)
         self.gen_thumb_btn.clicked.connect(self.generate_thumbnail)
-        load_img_btn = QtWidgets.QPushButton("Load Image…")
+        load_img_btn = QtWidgets.QPushButton("Load Imageâ€¦")
         load_img_btn.setObjectName("lib_btn")
         load_img_btn.setFixedHeight(22)
         load_img_btn.clicked.connect(self._load_image_for_new_pose)
@@ -1816,8 +1816,8 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         thumb_btns_row.addWidget(load_img_btn)
         self.preview_layout.addWidget(thumb_btns)
 
-        # -- Formulario — layout que se estira con la ventana -----
-        # El contenedor ocupa todo el espacio restante vertical
+        # -- Form â€” layout that stretches with the window ---------
+        # The container takes all remaining vertical space
         form_outer = QtWidgets.QWidget()
         form_outer.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
@@ -1833,16 +1833,16 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         form_lay.setContentsMargins(8, 6, 8, 8)
         form_lay.setSpacing(0)
 
-        # "New Pose" arriba
+        # "New Pose" at the top
         title_lbl = QtWidgets.QLabel("New Pose")
         title_lbl.setStyleSheet(
             f"color: {C_TEXT_DIM}; font-size: 9pt; font-weight: bold; "
             "letter-spacing: 0.5px;"
         )
         form_lay.addWidget(title_lbl)
-        form_lay.addSpacing(18)   # ~2 líneas de espacio visual
+        form_lay.addSpacing(18)   # ~2 lines of visual space
 
-        # Name label + input — altura fija, no crece
+        # Name label + input â€” fixed height, does not grow
         form_lay.addWidget(make_field_label("Name"))
         self.new_pose_name = QtWidgets.QLineEdit()
         self.new_pose_name.setFixedHeight(40)
@@ -1853,12 +1853,12 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             f"font-size: {FORM_TEXT_PT}pt; padding: 4px 6px;"
         )
         self.new_pose_name.returnPressed.connect(self.save_new_pose)
-        form_lay.addWidget(self.new_pose_name)   # sin stretch
+        form_lay.addWidget(self.new_pose_name)   # no stretch
 
-        # 3 líneas visuales de espacio fijo entre Name y Comment
+        # 3 visual lines of fixed space between Name and Comment
         form_lay.addSpacing(27)
 
-        # Comment label + input — ESTE es el que crece al estirar la ventana
+        # Comment label + input â€” THIS is the one that grows with the window
         form_lay.addWidget(make_field_label("Comment"))
         self.new_pose_comment = QtWidgets.QPlainTextEdit()
         self.new_pose_comment.setMinimumHeight(36)
@@ -1868,11 +1868,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.new_pose_comment.setStyleSheet(
             f"font-size: {FORM_TEXT_PT}pt;"
         )
-        form_lay.addWidget(self.new_pose_comment, 1)   # stretch=1: crece con la ventana
+        form_lay.addWidget(self.new_pose_comment, 1)   # stretch=1: grows with the window
 
-        self.preview_layout.addWidget(form_outer, 1)   # stretch=1: el form ocupa espacio libre
+        self.preview_layout.addWidget(form_outer, 1)   # stretch=1: the form takes the free space
 
-        # -- Botones Save / Cancel ---------------------------------
+        # -- Save / Cancel buttons ---------------------------------
         btn_container = QtWidgets.QWidget()
         btn_row = QHBoxLayout(btn_container)
         btn_row.setContentsMargins(0, 0, 0, 0)
@@ -1887,7 +1887,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.preview_layout.addWidget(btn_container)
 
     def _load_image_for_new_pose(self):
-        """Carga imagen para el thumbnail del formulario New Pose (antes de guardar)."""
+        """Loads an image for the New Pose form thumbnail (before saving)."""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Select thumbnail image", "",
             "Images (*.png *.jpg *.jpeg *.bmp *.tga *.tif *.tiff)"
@@ -1896,7 +1896,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             return
         pix = QtGui.QPixmap(path)
         if pix.isNull():
-            self.status_bar.showMessage("Imagen no válida.")
+            self.status_bar.showMessage("Invalid image.")
             return
         pix_s = pix.scaled(THUMB_W, THUMB_H, QtCore.Qt.KeepAspectRatioByExpanding,
                             QtCore.Qt.SmoothTransformation)
@@ -1912,12 +1912,12 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.new_pose_preview_label.setPixmap(
             pix_crop.scaled(w, h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         )
-        self.status_bar.showMessage("Imagen cargada OK.")
+        self.status_bar.showMessage("Image loaded OK.")
 
     def _generate_thumbnail_for_existing_pose(self):
-        """Genera y reemplaza el thumbnail de una pose ya guardada."""
+        """Generates and replaces the thumbnail of an already saved pose."""
         if not self.current_pose_path:
-            self.status_bar.showMessage("Seleccioná una pose primero.")
+            self.status_bar.showMessage("Select a pose first.")
             return
         out_path = os.path.join(self.current_pose_path, "preview.png")
         if os.path.exists(out_path):
@@ -1933,14 +1933,14 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
                 pix.scaled(w, h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             )
             self.load_poses_from_folder(self.current_folder_path)
-            self.status_bar.showMessage("Thumbnail reemplazado OK.")
+            self.status_bar.showMessage("Thumbnail replaced OK.")
         else:
-            self.status_bar.showMessage("No se pudo capturar el viewport.")
+            self.status_bar.showMessage("Could not capture the viewport.")
 
     def load_thumbnail_for_pose(self):
-        """Carga una imagen externa como thumbnail de la pose seleccionada."""
+        """Loads an external image as the thumbnail of the selected pose."""
         if not self.current_pose_path:
-            self.status_bar.showMessage("Load thumbnail: seleccioná una pose primero.")
+            self.status_bar.showMessage("Load thumbnail: select a pose first.")
             return
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Select thumbnail image", "",
@@ -1952,7 +1952,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         try:
             pix = QtGui.QPixmap(path)
             if pix.isNull():
-                self.status_bar.showMessage("Load thumbnail: imagen no válida.")
+                self.status_bar.showMessage("Load thumbnail: invalid image.")
                 return
             pix_scaled = pix.scaled(THUMB_W, THUMB_H, QtCore.Qt.KeepAspectRatioByExpanding,
                                     QtCore.Qt.SmoothTransformation)
@@ -1960,26 +1960,26 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             oy = (pix_scaled.height() - THUMB_H) // 2
             pix_crop = pix_scaled.copy(ox, oy, THUMB_W, THUMB_H)
             pix_crop.save(dst, "PNG")
-            # Actualizar preview inmediatamente
+            # Update preview immediately
             pix_show = pix_crop.scaled(230, 188, QtCore.Qt.KeepAspectRatio,
                                        QtCore.Qt.SmoothTransformation)
             self.preview_label.setPixmap(pix_show)
-            # Recargar la grilla para mostrar el nuevo thumb
+            # Reload the grid to show the new thumb
             self.load_poses_from_folder(self.current_folder_path)
-            self.status_bar.showMessage("Thumbnail cargado OK.")
+            self.status_bar.showMessage("Thumbnail loaded OK.")
         except Exception as e:
             self.status_bar.showMessage(f"Load thumbnail error: {e}")
 
     def generate_thumbnail(self):
         """
-        Captura el viewport activo:
-        1. Hace zoomExtents al objeto seleccionado (centra la camara).
-        2. Activa shading solido (sin gradiente de fondo).
-        3. Captura con gw.getViewportDib().
-        4. Restaura el estado del viewport.
+        Captures the active viewport:
+        1. Zoom extents on the selected object (centers the camera).
+        2. Enables solid shading (no background gradient).
+        3. Captures with gw.getViewportDib().
+        4. Restores the viewport state.
         """
         if not self.library_path:
-            self.status_bar.showMessage("Thumbnail: selecciona una library primero.")
+            self.status_bar.showMessage("Thumbnail: select a library first.")
             return
 
         out_path = os.path.join(self.library_path, "_thumb_preview.png")
@@ -1989,11 +1989,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             except Exception:
                 pass
 
-        # 1. Zoom al objeto seleccionado y fondo solido
-        # Guardamos el estado del gradiente para restaurarlo despues
+        # 1. Zoom to the selected object and solid background
+        # Store the gradient state to restore it afterwards
         rt.execute("(viewport.setRenderLevel #smoothhighlights)")
         try:
-            # Desactivar gradiente de fondo del viewport
+            # Disable the viewport background gradient
             rt.execute(
                 "( local vc = viewport.getCamera() ; "
                 "  IDisplayGamma.displayGamma = 1.0 ;"
@@ -2007,7 +2007,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
         if not ok or not os.path.exists(out_path):
             self.status_bar.showMessage(
-                "Thumbnail: no se pudo capturar. Verificá MAX 2010+."
+                "Thumbnail: capture failed. Check MAX 2010+."
             )
             return
 
@@ -2018,7 +2018,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             w, h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
         )
         self.new_pose_preview_label.setPixmap(pix)
-        self.status_bar.showMessage("Thumbnail capturado OK.")
+        self.status_bar.showMessage("Thumbnail captured OK.")
 
     def save_new_pose(self):
         if not self.current_folder_path:
@@ -2062,7 +2062,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         if self._tmp_thumb_path and os.path.exists(self._tmp_thumb_path):
             shutil.copy2(self._tmp_thumb_path, thumb_dst)
 
-        self._clear_preview_layout()  # limpia el formulario Save Pose antes de recargar
+        self._clear_preview_layout()  # clears the Save Pose form before reloading
         self.load_poses_from_folder(self.current_folder_path)
         self.status_bar.showMessage(f"Pose '{name}' saved.")
         for i in range(self.items_view.count()):
@@ -2073,11 +2073,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
                 break
 
     # ---------------------------------------------
-    #  Menus contextuales
+    #  Context menus
     # ---------------------------------------------
 
     # ---------------------------------------------
-    #  Drag & Drop — poses ? carpeta del sidebar
+    #  Drag & Drop â€” poses â†’ sidebar folder
     # ---------------------------------------------
 
     def _sidebar_drag_enter(self, event):
@@ -2089,13 +2089,13 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
     def _sidebar_drag_move(self, event):
         item = self.sidebar.itemAt(event.position().toPoint())
         if item:
-            self.sidebar.setCurrentItem(item)   # resalta la carpeta destino
+            self.sidebar.setCurrentItem(item)   # highlights the target folder
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def _sidebar_drop_poses(self, event):
-        """Mueve las poses seleccionadas a la carpeta sobre la que se soltaron."""
+        """Moves the selected poses to the folder they were dropped on."""
         target_item = self.sidebar.itemAt(event.position().toPoint())
         if not target_item:
             event.ignore()
@@ -2130,12 +2130,12 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             self.load_poses_from_folder(self.current_folder_path)
             tgt_name = os.path.basename(target_folder)
             self.status_bar.showMessage(
-                f"{moved} pose(s) movida(s) a '{tgt_name}'."
+                f"{moved} pose(s) moved to '{tgt_name}'."
             )
         event.acceptProposedAction()
 
     def _save_comment(self):
-        """Guarda el comment editado directamente en pose_data.json."""
+        """Saves the edited comment directly to pose_data.json."""
         if not self.current_pose_path:
             return
         json_file = os.path.join(self.current_pose_path, "pose_data.json")
@@ -2154,7 +2154,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         menu = QtWidgets.QMenu(self)
 
         if is_folder:
-            # Panel izquierdo: solo acciones de carpeta (sin New Pose)
+            # Left panel: folder actions only (no New Pose)
             item = self.sidebar.itemAt(pos)
             if item:
                 in_sub = bool(item.parent())
@@ -2174,13 +2174,13 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
                 na.triggered.connect(self.create_top_folder)
                 menu.exec(self.sidebar.viewport().mapToGlobal(pos))
         else:
-            # Panel central: solo acciones de pose (sin New Folder)
+            # Center panel: pose actions only (no New Folder)
             item = self.items_view.itemAt(pos)
             selected = self.items_view.selectedItems()
             if item:
                 if len(selected) > 1:
                     d = menu.addAction(f"Delete {len(selected)} poses")
-                    br = menu.addAction(f"Batch Rename Objects in {len(selected)} poses…")
+                    br = menu.addAction(f"Batch Rename Objects in {len(selected)} posesâ€¦")
                     act = menu.exec(self.items_view.viewport().mapToGlobal(pos))
                     if act == d:
                         self._delete_multiple_poses(selected)
@@ -2199,11 +2199,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
                     menu.exec(self.items_view.viewport().mapToGlobal(pos))
 
     # ---------------------------------------------
-    #  CRUD carpetas
+    #  Folder CRUD
     # ---------------------------------------------
 
     def _batch_rename_multi_poses(self, items):
-        """Abre un diálogo de Batch Rename que aplica a todas las poses seleccionadas."""
+        """Opens a Batch Rename dialog that applies to all selected poses."""
         pose_paths = []
         for it in items:
             real_name = it.data(QtCore.Qt.UserRole)
@@ -2231,7 +2231,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.current_pose_path = None
         self.reset_preview_panel()
         self.load_poses_from_folder(self.current_folder_path)
-        self.status_bar.showMessage(f"{deleted} pose(s) eliminada(s).")
+        self.status_bar.showMessage(f"{deleted} pose(s) deleted.")
 
     def create_new_folder(self):
         if not self.current_folder_path:
@@ -2301,7 +2301,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.status_bar.showMessage(f"Folder '{item.text(0)}' deleted.")
 
     # ---------------------------------------------
-    #  CRUD poses
+    #  Pose CRUD
     # ---------------------------------------------
 
     def rename_pose(self, item):
@@ -2343,7 +2343,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.load_poses_from_folder(self.current_folder_path)
 
     # ---------------------------------------------
-    #  Colores de carpeta
+    #  Folder colors
     # ---------------------------------------------
 
     def change_folder_color(self, item):

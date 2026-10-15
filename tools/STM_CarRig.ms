@@ -1,12 +1,15 @@
 /*
 ================================================================================
-  CarRig v1.7  -  Rig de autos con dummies para 3ds Max (MAXScript, gratis)
+  STM CarRig v1.7  -  Rig de autos con dummies para 3ds Max (MAXScript, gratis)
+  Parte de Studio Toolbar for MAX  -  menu TOOLS
+  Nota: los identificadores internos (CR_*, CarRigControls, user props CR_part /
+  CR_placing) NO se renombran: quedan guardados en las escenas con rigs existentes.
 --------------------------------------------------------------------------------
   INTERFAZ: 1 RIG  ->  2 MANEJO  ->  3 SIMULAR   (+ Ajustes avanzados, plegado)
   Pasando el mouse sobre cada control aparece su explicacion.
 
   FLUJO
-  1. MAXScript > Run Script > CarRig.ms
+  1. TOOLS > Car Rig   (o MAXScript > Run Script > STM_CarRig.ms)
   2. (Opcional) selecciona el auto modelado: los dummies se crean a su tamano.
      CREAR RIG -> se crea el rig completo con dummies.
   3. Ubicar: los unicos dummies que se mueven son los *_POS (naranja) y el ROOT.
@@ -480,7 +483,7 @@ fn CR_loadRig root =
 	for w = 1 to 4 do
 		for nd in #(rd.poss[w], rd.sims[w], rd.ofss[w], rd.steers[w], rd.spins[w]) do
 			if not (isValidNode nd) do ok = false
-	if ok then rd else (messageBox "Faltan dummies del rig (se renombraron o borraron?)." title:"CarRig"; undefined)
+	if ok then rd else (messageBox "Faltan dummies del rig (se renombraron o borraron?)." title:"STM CarRig"; undefined)
 )
 
 -- relee posiciones de los *_POS y radios; valida el layout
@@ -500,12 +503,12 @@ fn CR_prepareRest rd =
 	local rearC = (rd.rests[3] + rd.rests[4]) / 2.0
 	if (dot (frontC - rearC) fwdL) <= 0.0 do
 	(
-		messageBox "Las ruedas FL/FR tienen que quedar del lado del texto FRENTE." title:"CarRig"
+		messageBox "Las ruedas FL/FR tienen que quedar del lado del texto FRENTE." title:"STM CarRig"
 		return false
 	)
 	if (dot (rd.rests[1] - rd.rests[2]) leftL) <= 0.0 or (dot (rd.rests[3] - rd.rests[4]) leftL) <= 0.0 do
 	(
-		messageBox "Izquierda/derecha invertidas: L = izquierda del conductor mirando hacia el FRENTE." title:"CarRig"
+		messageBox "Izquierda/derecha invertidas: L = izquierda del conductor mirando hacia el FRENTE." title:"STM CarRig"
 		return false
 	)
 	rd.wb = dot (frontC - rearC) fwdL
@@ -633,7 +636,7 @@ fn CR_exitPlace rd =
 fn CR_bake rd o grounds startF endF progFn =
 (
 	local n = (endF - startF + 1) as integer
-	if n < 2 do (messageBox "Rango de frames invalido." title:"CarRig"; return undefined)
+	if n < 2 do (messageBox "Rango de frames invalido." title:"STM CarRig"; return undefined)
 
 	local dt = 1.0 / frameRate
 	local upm = CR_unitsPerMeter()
@@ -991,7 +994,7 @@ fn CR_hasRig =
 	if CR_tryAutoLoad() then true
 	else
 	(
-		messageBox "Crea un rig, o selecciona el ROOT de uno existente." title:"CarRig"
+		messageBox "Crea un rig, o selecciona el ROOT de uno existente." title:"STM CarRig"
 		false
 	)
 )
@@ -1037,10 +1040,10 @@ rollout CR_roRig "1 - RIG"
 
 	fn needRigSel =
 	(
-		if selection.count == 0 then (messageBox "Selecciona las piezas a linkear." title:"CarRig"; false)
+		if selection.count == 0 then (messageBox "Selecciona las piezas a linkear." title:"STM CarRig"; false)
 		else if CR_currentRig == undefined or not (isValidNode CR_currentRig.root) then
 		(
-			messageBox "Primero crea o carga un rig." title:"CarRig"
+			messageBox "Primero crea o carga un rig." title:"STM CarRig"
 			false
 		)
 		else
@@ -1056,7 +1059,7 @@ rollout CR_roRig "1 - RIG"
 	fn linkWheel w =
 	(
 		if needRigSel() do
-			undo "CarRig Link" on (CR_relink (selection as array) CR_currentRig.spins[w])
+			undo "STM CarRig Link" on (CR_relink (selection as array) CR_currentRig.spins[w])
 	)
 
 	on CR_roRig open do CR_tryAutoLoad()
@@ -1065,13 +1068,13 @@ rollout CR_roRig "1 - RIG"
 	(
 		local nm = substituteString etName.text " " "_"
 		if (getNodeByName (nm + "_ROOT")) != undefined then
-			messageBox ("Ya existe un rig llamado " + nm + ". Cambia el nombre.") title:"CarRig"
+			messageBox ("Ya existe un rig llamado " + nm + ". Cambia el nombre.") title:"STM CarRig"
 		else
 		(
 			-- medir solo el modelo: ignorar dummies de rigs existentes
 			local refs = for s in selection where not (CR_isPart s) collect s
 			local root
-			undo "CarRig Create" on (root = CR_createRig nm ddFwd.selection refs)
+			undo "STM CarRig Create" on (root = CR_createRig nm ddFwd.selection refs)
 			if root != undefined do
 			(
 				setRig (CR_loadRig root)
@@ -1116,7 +1119,7 @@ rollout CR_roRig "1 - RIG"
 	on btLBody pressed do
 	(
 		if needRigSel() do
-			undo "CarRig Link" on (CR_relink (selection as array) CR_currentRig.bodyOfs)
+			undo "STM CarRig Link" on (CR_relink (selection as array) CR_currentRig.bodyOfs)
 	)
 
 	on btLCal pressed do
@@ -1124,7 +1127,7 @@ rollout CR_roRig "1 - RIG"
 		if needRigSel() do
 		(
 			local sel = selection as array
-			undo "CarRig Link" on
+			undo "STM CarRig Link" on
 			(
 				for b in sel where not (CR_isPart b) and (b.parent == undefined or (findItem sel b.parent) == 0) do
 				(
@@ -1144,11 +1147,11 @@ rollout CR_roRig "1 - RIG"
 
 	on btLoad pressed do
 	(
-		if selection.count != 1 then messageBox "Selecciona solo el ROOT del rig." title:"CarRig"
+		if selection.count != 1 then messageBox "Selecciona solo el ROOT del rig." title:"STM CarRig"
 		else
 		(
 			local rd = CR_loadRig selection[1]
-			if rd == undefined then messageBox "Eso no es un ROOT de CarRig (v1.2 o posterior)." title:"CarRig"
+			if rd == undefined then messageBox "Eso no es un ROOT de CarRig (v1.2 o posterior)." title:"STM CarRig"
 			else
 			(
 				setRig rd
@@ -1200,9 +1203,9 @@ rollout CR_roDrive "2 - MANEJO"
 
 	on btAttach pressed do
 	(
-		if not (isValidNode CR_path) then messageBox "Primero elegi una spline." title:"CarRig"
+		if not (isValidNode CR_path) then messageBox "Primero elegi una spline." title:"STM CarRig"
 		else if CR_hasRig() do
-			undo "CarRig Path" on (CR_attachPath CR_currentRig CR_path cbConst.checked CR_roSim.spS.value CR_roSim.spE.value)
+			undo "STM CarRig Path" on (CR_attachPath CR_currentRig CR_path cbConst.checked CR_roSim.spS.value CR_roSim.spE.value)
 	)
 
 	on btGAdd pressed do
@@ -1321,7 +1324,7 @@ rollout CR_roAdv "Ajustes avanzados"
 )
 
 try (closeRolloutFloater CR_floater) catch ()
-CR_floater = newRolloutFloater "CarRig v1.7" 262 780
+CR_floater = newRolloutFloater "STM CarRig v1.7" 262 780
 addRollout CR_roRig CR_floater
 addRollout CR_roDrive CR_floater
 addRollout CR_roSim CR_floater

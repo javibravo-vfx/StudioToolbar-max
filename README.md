@@ -11,13 +11,14 @@ Designed for VFX studios — manages resolution, film size, FPS, pipeline naviga
 
 | Section | What it does |
 |---|---|
-| **Tools** | Quick-launch buttons: Overscan, Image Plane, Remove Background, Show Textures, Bake Alembic, Studio Library |
-| **Resolution** | W×H spinners with aspect-lock, Double/Halve buttons, Save/Load/Delete presets |
-| **Film Size** | Reads/writes aperture for Standard, VRay Camera and Physical Camera |
-| **FPS / Units** | Read-only sync from `rt.frameRate` and `rt.units.SystemType` |
-| **Pipeline** | Project → Sequence → Shot → Task dropdowns, auto-populated from filesystem |
-| **Viewport Snapshot** | Saves a `.jpg` of the active viewport — configurable filename parts and destination |
-| **Actions** | Open, Get (parse path), Paths, Save with optional versioning, Reset |
+| **Tools** | Quick-launch buttons: Overscan, Image Plane, Remove Background, Show Textures, Bake Camera, Studio Library — plus a **TOOLS ▾** menu that lists every script in `tools/` (subfolders become submenus) |
+| **Resolution** | W×H spinners, live aspect ratio, aspect lock, ×2 / ½. Preset list (arrow inside the label field) with your saved presets and standard formats (HD, UHD, DCI 2K/4K, Scope, square, vertical…) |
+| **Film gate** | Reads/writes aperture for Standard, V-Ray and Physical cameras. Preset list includes common cinema sensor widths (ARRI Alexa 35 / Mini / Mini LF, RED V-Raptor / Komodo, Sony Venice 2, Blackmagic, Super 35…) |
+| **FPS / Units** | Live sync; click FPS to switch frame rate |
+| **Pipeline** | Project → Sequence → Shot → Task dropdowns from the filesystem, **+** to create task folders, folder button to open shot / task / subfolders in Explorer |
+| **Viewport Snapshot** | Saves a `.jpg` of the active viewport — configurable filename parts and destination. Right-click opens the snapshots folder |
+| **Actions** | **OPEN ▾** (browse, or pick a recent version of the task) · **SAVE ▾** (dialog, or save next version in one click) · **GET** (reads shot/task from the open file — glows amber when the dropdowns don't match the open file) · **PATHS** (project paths, stored in the .max and restored on open) · **SET RENDER** (publish output incl. render elements / V-Ray / Arnold; asks before overwriting) · **RESET** |
+| **Status** | Coloured result of the last action; click for a history with full paths (click an entry to copy) |
 | **Setup** | Full pipeline config dialog with preset save/load |
 
 ---

@@ -1,5 +1,42 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.6.2
+- Setup dialog: shrinking the window no longer squashes text — buttons and labels keep their text width (with Max's real font) and the dialog stops at its content's minimum size
+
+## v2.6.1
+- **Setup dialog redesigned:** sidebar with four pages (Project · Tasks · Folders · Output) instead of one 1280 px column
+  - Project: Browse… for the root, live check — lists the projects found or warns if the root doesn't exist
+  - Tasks: task list and its scenes-subfolders side by side — select a task to edit its subfolders
+  - Folders: live preview of the resulting folder tree, with roles (scenes / review / renders / snapshots)
+  - Output: snapshots (destination, name parts, example) and render frame separator
+  - Footer: preset combo · Load · Save as… · delete · Config folder · Cancel · Save & Apply
+- **Fix:** Save & Apply no longer wipes other settings stored in the same file (custom viewport BG colour presets were reset to defaults)
+- Toolbar: FPS no longer truncated ("3…S"), "mm" no longer cut to "mn", bigger and bolder mini icons and spinner arrows, proper gear icon
+- Width kept below v2.5 (shot dropdown slightly narrower)
+
+## v2.6.0 — redesign (branch `v2.6`)
+**Look**
+- Dock title bar is now a vertical handle on the left → toolbar is 16 px shorter (still draggable / floatable)
+- Small buttons use crisp SVG icons instead of letters/emoji: save, delete, lock, ×2, ½, +, folder, setup
+- Combo / spinner / menu arrows are real chevrons (CSS triangles rendered as "=" bars in Qt)
+- Status shows a coloured dot; text fades back to grey, the dot keeps the result colour
+- Overall width slightly *narrower* than v2.5 despite the new controls
+
+**Resolution & film gate**
+- Preset list opens from an arrow inside the label field (replaces the separate L button)
+- Built-in presets under your saved ones: standard resolutions and cinema camera sensor widths
+- Label shows the matching preset name automatically (yours first, then built-in)
+- Live aspect ratio next to W×H
+
+**Pipeline & actions**
+- Folder button: open Shot / Task / task subfolders / snapshots folder in Explorer
+- OPEN ▾: recent .max versions of the selected task (asks to save changes first)
+- SAVE ▾: save next version in one click (no dialog)
+- GET glows amber when the open file belongs to a different shot/task than the dropdowns
+- FPS is clickable: 24 / 25 / 30 / 48 / 50 / 60
+- Snapshot button: right-click → open snapshots folder
+- Status history (click the status): last 25 actions with time and full path; click to copy
+
 ## v2.5.42
 - **AUTO → SHOT NAME.** Same function, clearer name: when ON, SET RENDER names the render after the dropdowns (`shot_task_v###`) instead of the open .max — for rendering several shots from one scene. State is remembered between sessions
 - **INC removed.** The render version is always the .max version. If that version folder already has renders, SET RENDER asks: **Overwrite / New version / Cancel** (New version = next free number) instead of silently overwriting or silently bumping

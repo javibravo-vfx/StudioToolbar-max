@@ -1,5 +1,7 @@
 # Studio Toolbar for 3ds Max
 
+[![3ds Max](https://img.shields.io/badge/3ds%20Max-2024%2B-0696D7)](https://www.autodesk.com/products/3ds-max/) ![Version](https://img.shields.io/badge/version-2.6.3-informational) ![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white) ![Qt](https://img.shields.io/badge/PySide-6-41CD52?logo=qt&logoColor=white) ![Platform](https://img.shields.io/badge/platform-Windows-555) [![Maya](https://img.shields.io/badge/also%20for-Maya-37A5CC)](https://github.com/javibravo-vfx/StudioToolbar-maya) [![Blender](https://img.shields.io/badge/also%20for-Blender-E87D0D?logo=blender&logoColor=white)](https://github.com/javibravo-vfx/StudioToolbar-blender)
+
 A dockable pipeline toolbar for **3ds Max** built with Python / PySide6.  
 Designed for VFX studios — manages resolution, film size, FPS, pipeline navigation, and shot actions from a single persistent dock.
 

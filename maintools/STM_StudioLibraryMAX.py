@@ -1,6 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-StudioLibrary MAX v2.0.0
+StudioLibrary MAX v2.1.0
+
+Changes v2.1.0:
+- FIX: poses of linked objects needed two pastes. Poses were applied in selection order in
+       world space, so a child placed before its parent was dragged away when the parent
+       moved. Objects are now applied parents-first.
+- Poses store full transforms (world + parent-relative). Default apply is relative to the
+  parent (follows the rig, like Maya Studio Library); "World space" option for absolute.
+- Apply Pose is a single Undo step. Key uses pymxs animate/at-time (no MAXScript strings,
+  no lookups by name inside execute).
+- Selection-aware: if some of the pose's objects are selected, only those get the pose.
+- Mirror swaps left/right objects (L/R, Left/Right, Lft/Rgt) when the counterpart exists.
+- Duplicate object names: the selected one wins.
+- Thumbnail capture no longer changes display gamma, shading or viewport framing.
+- Previews saved at max 480 px wide (full-screen captures slowed down the grid).
+- Pose / folder names validated; a failed save leaves no empty folder.
+- Comment saved 0.8 s after typing stops (was rewriting the JSON on every key and on
+  every pose selection).
+- Options (Key, Mirror, Additive, World space, T R S) remembered between sessions.
+- Context menu: Select Objects. Renaming objects also updates parent references.
+- Old poses (format 1) still load and apply.
 
 Changes v0.11.16:
 - UX 1: + New Folder moved to the top bar, LEFT side. + Save Pose stays on the right.
@@ -33,7 +53,7 @@ from datetime import datetime
 
 rt = pymxs.runtime
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 # -------------------------------------------------------------
 #  UI constants
@@ -65,6 +85,26 @@ C_ACCENT_TX = "#D0D0D0"
 C_ACCENT_HO = "#3A3A3A"
 C_STATUS    = "#1A1A1A"
 
+# Checkbox tick — stylesheets need a file for image: url(...)
+def _check_icon_url():
+    try:
+        d = os.path.join(os.path.expanduser("~"), ".studio-toolbar", "icons")
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, "sl_check.svg")
+        svg = ('<svg viewBox="0 0 16 16" width="16" height="16" xmlns="http://www.w3.org/2000/svg">'
+               '<path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#ffffff" stroke-width="2.2" '
+               'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+        if not os.path.exists(path) or open(path).read() != svg:
+            with open(path, "w") as f:
+                f.write(svg)
+        return path.replace("\\", "/")
+    except Exception:
+        return ""
+
+CHECK_ICON = _check_icon_url()
+C_CHECK_BG = "#2f7f8f"
+C_CHECK_BO = "#4ec9c9"
+
 PLACEHOLDER_BG = C_BG3
 PLACEHOLDER_FG = "#3A3A3A"
 
@@ -90,6 +130,7 @@ def load_state():
 
 def save_state(library_path, current_project=""):
     cfg = configparser.ConfigParser()
+    cfg.read(_settings_path(), encoding="utf-8")      # keep the [options] section
     cfg["state"] = {
         "library_path":    library_path    or "",
         "current_project": current_project or "",
@@ -98,9 +139,48 @@ def save_state(library_path, current_project=""):
         cfg.write(f)
 
 
+OPTION_KEYS = ("key", "mirror", "additive", "world", "t", "r", "s")
+OPTION_DEFAULTS = {"key": False, "mirror": False, "additive": False, "world": False,
+                   "t": True, "r": True, "s": True}
+
+
+def load_options():
+    cfg = configparser.ConfigParser()
+    cfg.read(_settings_path(), encoding="utf-8")
+    return {k: cfg.getboolean("options", k, fallback=OPTION_DEFAULTS[k]) for k in OPTION_KEYS}
+
+
+def save_options(values):
+    try:
+        cfg = configparser.ConfigParser()
+        cfg.read(_settings_path(), encoding="utf-8")
+        cfg["options"] = {k: "true" if values.get(k) else "false" for k in OPTION_KEYS}
+        with open(_settings_path(), "w", encoding="utf-8") as f:
+            cfg.write(f)
+    except Exception as e:
+        print(f"[StudioLibMAX] save options: {e}")
+
+
 # -------------------------------------------------------------
 #  Transform helpers
 # -------------------------------------------------------------
+#
+#  Pose data (pose_data.json, format 2) stores per node:
+#    "world"  : node.transform as 12 floats (4 rows × xyz, Max row-vector convention)
+#    "local"  : transform relative to the parent at capture time (null if no parent)
+#    "parent" : parent node name at capture time (null if none)
+#    "position" / "rotation" / "scale" : world components (format 1, still used by
+#                                        Mirror / Additive and by old poses)
+#
+#  Applying a pose:
+#    • nodes are applied PARENTS FIRST — a child is never placed before its parent
+#      moves (applying in selection order needed two pastes for linked objects)
+#    • default space is LOCAL (relative to the current parent, like Maya Studio
+#      Library), so a pose follows the rig if the parent moved; "World space"
+#      forces the captured absolute transforms
+#    • everything runs inside one Undo record; Key uses animate on / at time
+#    • all matrix maths is plain Python (no MAXScript strings, no getNodeByName
+#      lookups by string inside execute)
 
 def quat_to_list(q):
     return [q.x, q.y, q.z, q.w]
@@ -113,77 +193,231 @@ def list_to_quat(lst):
     return rt.Quat(0, 0, 0, 1)
 
 
-def apply_node_transform(node, pos_list, rot_list, scale_list,
-                         mirror=False, additive=False, key=False,
-                         do_pos=True, do_rot=True, do_scale=True):
-    """
-    FIX: rt.execute() does NOT accept 'local' at the top level — it must be inside a ( ) block.
-    Without key: direct pymxs. With key: MAXScript in a ( ) block.
-    """
+# ── 4×3 affine matrices as flat lists [r0x r0y r0z r1x … r3z] (row vectors) ──
+IDENTITY_M = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+
+
+def m_from_node(node):
+    t = node.transform
+    out = []
+    for r in (t.row1, t.row2, t.row3, t.row4):
+        out += [float(r.x), float(r.y), float(r.z)]
+    return out
+
+
+def m_to_max(m):
+    return rt.Matrix3(rt.Point3(m[0], m[1], m[2]), rt.Point3(m[3], m[4], m[5]),
+                      rt.Point3(m[6], m[7], m[8]), rt.Point3(m[9], m[10], m[11]))
+
+
+def m_mul(a, b):
+    """a * b  (apply a, then b) — Max convention: world = local * parentWorld."""
+    out = []
+    for i in range(3):
+        r = a[i * 3:i * 3 + 3]
+        out += [r[0] * b[0] + r[1] * b[3] + r[2] * b[6],
+                r[0] * b[1] + r[1] * b[4] + r[2] * b[7],
+                r[0] * b[2] + r[1] * b[5] + r[2] * b[8]]
+    t = a[9:12]
+    out += [t[0] * b[0] + t[1] * b[3] + t[2] * b[6] + b[9],
+            t[0] * b[1] + t[1] * b[4] + t[2] * b[7] + b[10],
+            t[0] * b[2] + t[1] * b[5] + t[2] * b[8] + b[11]]
+    return out
+
+
+def m_inv(a):
+    """Inverse of an affine 4×3 matrix (general 3×3 part, not only orthonormal)."""
+    m00, m01, m02, m10, m11, m12, m20, m21, m22 = a[:9]
+    c00 = m11 * m22 - m12 * m21
+    c01 = m12 * m20 - m10 * m22
+    c02 = m10 * m21 - m11 * m20
+    det = m00 * c00 + m01 * c01 + m02 * c02
+    if abs(det) < 1e-12:
+        return list(IDENTITY_M)
+    inv = 1.0 / det
+    r = [c00 * inv, (m02 * m21 - m01 * m22) * inv, (m01 * m12 - m02 * m11) * inv,
+         c01 * inv, (m00 * m22 - m02 * m20) * inv, (m02 * m10 - m00 * m12) * inv,
+         c02 * inv, (m01 * m20 - m00 * m21) * inv, (m00 * m11 - m01 * m10) * inv]
+    tx, ty, tz = a[9:12]
+    r += [-(tx * r[0] + ty * r[3] + tz * r[6]),
+          -(tx * r[1] + ty * r[4] + tz * r[7]),
+          -(tx * r[2] + ty * r[5] + tz * r[8])]
+    return r
+
+
+def m_trs_mix(target, current, do_t, do_r, do_s):
+    """Take translation / rotation / scale from `target` or `current` per channel."""
+    if do_t and do_r and do_s:
+        return list(target)
+
+    def split(m):
+        rows, scales = [], []
+        for i in range(3):
+            r = m[i * 3:i * 3 + 3]
+            s = (r[0] ** 2 + r[1] ** 2 + r[2] ** 2) ** 0.5
+            scales.append(s)
+            rows.append([c / s for c in r] if s > 1e-12 else [0.0, 0.0, 0.0])
+        return rows, scales, m[9:12]
+
+    tr, ts, tt = split(target)
+    cr, cs, ct = split(current)
+    rot, scl, pos = (tr if do_r else cr), (ts if do_s else cs), (tt if do_t else ct)
+    out = []
+    for i in range(3):
+        out += [c * scl[i] for c in rot[i]]
+    return out + list(pos)
+
+
+def m_close(a, b, eps=1e-4):
+    return all(abs(x - y) <= eps * max(1.0, abs(x), abs(y)) for x, y in zip(a, b))
+
+
+# ── mirror name mapping (L ↔ R) ───────────────────────────────────────────────
+_MIRROR_PAIRS = [("Left", "Right"), ("left", "right"), ("LEFT", "RIGHT"),
+                 ("Lft", "Rgt"), ("lft", "rgt"), ("L", "R"), ("l", "r")]
+
+
+def mirror_name(name):
+    """'Bip001 L Hand' → 'Bip001 R Hand', 'arm_L' → 'arm_R', 'Left_Leg' → 'Right_Leg'.
+    Only whole tokens separated by space _ - . : (or string start/end) are swapped."""
+    import re
+    for a, b in _MIRROR_PAIRS:
+        pat = r'(?<![A-Za-z0-9])(%s|%s)(?![a-z0-9])' % (re.escape(a), re.escape(b))
+        new, n = re.subn(pat, lambda mo: b if mo.group(1) == a else a, name)
+        if n:
+            return new
+    return name
+
+
+def node_depth(node):
+    d, p = 0, node.parent
+    while p is not None and d < 500:
+        d, p = d + 1, p.parent
+    return d
+
+
+def find_node(name, prefer=None):
+    """Scene node by name; when several share the name, prefer one in `prefer` (selection)."""
     try:
-        px = -pos_list[0] if mirror else pos_list[0]
-        py, pz = pos_list[1], pos_list[2]
-        sx, sy, sz = scale_list[0], scale_list[1], scale_list[2]
-        if mirror:
-            rot = rt.Quat(-rot_list[0], rot_list[1], rot_list[2], -rot_list[3])
+        found = list(rt.getNodeByName(name, all=True) or [])
+    except Exception:
+        n = rt.getNodeByName(name)
+        found = [n] if n is not None else []
+    if not found:
+        return None
+    if prefer:
+        for n in found:
+            if n in prefer:
+                return n
+    return found[0]
+
+
+def capture_node(node):
+    """Pose data for one node (format 2 + legacy components)."""
+    world = m_from_node(node)
+    parent = node.parent
+    local = m_mul(world, m_inv(m_from_node(parent))) if parent is not None else None
+    return {
+        "name":     node.name,
+        "parent":   parent.name if parent is not None else None,
+        "world":    [round(v, 7) for v in world],
+        "local":    [round(v, 7) for v in local] if local is not None else None,
+        "position": [node.pos.x,   node.pos.y,   node.pos.z],
+        "rotation": quat_to_list(node.rotation),
+        "scale":    [node.scale.x, node.scale.y, node.scale.z],
+    }
+
+
+def apply_node_components(node, pos_list, rot_list, scale_list,
+                          mirror=False, additive=False,
+                          do_pos=True, do_rot=True, do_scale=True):
+    """Format-1 path (world components). Used for Mirror, Additive and old poses.
+    Must be called inside the caller's animate/undo context."""
+    px = -pos_list[0] if mirror else pos_list[0]
+    pos   = rt.Point3(px, pos_list[1], pos_list[2])
+    scale = rt.Point3(scale_list[0], scale_list[1], scale_list[2])
+    if mirror:
+        rot = rt.Quat(-rot_list[0], rot_list[1], rot_list[2], -rot_list[3])
+    else:
+        rot = list_to_quat(rot_list)
+    if additive:
+        if do_scale:
+            node.scale = rt.Point3(node.scale.x * scale.x, node.scale.y * scale.y, node.scale.z * scale.z)
+        if do_rot: node.rotation = node.rotation * rot
+        if do_pos: node.pos = node.pos + pos
+    else:
+        if do_scale: node.scale    = scale
+        if do_rot:   node.rotation = rot
+        if do_pos:   node.pos      = pos
+
+
+def plan_pose(nodes_data, selection, mirror=False):
+    """Resolve pose entries to scene nodes. Returns (plan, missing, only_selected) where plan
+    is a list of (node, entry) sorted parents-first.
+    • If some selected objects belong to the pose, only those receive it (Studio Library style);
+      otherwise every pose object found in the scene does.
+    • Mirror: an entry goes to its L/R counterpart when that object exists."""
+    sel = list(selection or [])
+    plan, missing = [], []
+    for nd in nodes_data:
+        name = nd.get("name", "")
+        target_name = mirror_name(name) if mirror else name
+        node = find_node(target_name, sel) if target_name != name else None
+        if node is None:
+            node = find_node(name, sel)
+        if node is None:
+            missing.append(name)
+            continue
+        plan.append((node, nd))
+    only_selected = False
+    if sel:
+        only_sel = [(n, nd) for n, nd in plan if n in sel]
+        if only_sel and len(only_sel) < len(plan):
+            plan, only_selected = only_sel, True
+    plan.sort(key=lambda p: node_depth(p[0]))
+    return plan, missing, only_selected
+
+
+def apply_pose(nodes_data, key=False, mirror=False, additive=False, world_space=False,
+               do_pos=True, do_rot=True, do_scale=True, selection=None):
+    """Apply a pose. Returns dict(applied, missing, errors, only_selected)."""
+    plan, missing, only_selected = plan_pose(nodes_data, selection, mirror)
+    applied, errors = 0, []
+
+    def _do():
+        nonlocal applied
+        for node, nd in plan:
+            try:
+                use_components = mirror or additive or not nd.get("world")
+                if use_components:
+                    apply_node_components(
+                        node, nd.get("position", [0, 0, 0]), nd.get("rotation", [0, 0, 0, 1]),
+                        nd.get("scale", [1, 1, 1]), mirror=mirror, additive=additive,
+                        do_pos=do_pos, do_rot=do_rot, do_scale=do_scale)
+                else:
+                    target = nd["world"]
+                    parent = node.parent
+                    if (not world_space and nd.get("local") and parent is not None
+                            and parent.name == nd.get("parent")):
+                        target = m_mul(nd["local"], m_from_node(parent))
+                    target = m_trs_mix(target, m_from_node(node), do_pos, do_rot, do_scale)
+                    node.transform = m_to_max(target)
+                applied += 1
+            except Exception as e:
+                errors.append(f"{nd.get('name')}: {e}")
+
+    with pymxs.undo(True, "STM Apply Pose"):
+        if key:
+            with pymxs.animate(True), pymxs.attime(rt.currentTime):
+                _do()
         else:
-            rot = list_to_quat(rot_list)
-
-        if not key:
-            pos   = rt.Point3(px, py, pz)
-            scale = rt.Point3(sx, sy, sz)
-            if additive:
-                if do_scale:
-                    node.scale = rt.Point3(
-                        node.scale.x * scale.x,
-                        node.scale.y * scale.y,
-                        node.scale.z * scale.z)
-                if do_rot:   node.rotation = node.rotation * rot
-                if do_pos:   node.pos      = node.pos + pos
-            else:
-                if do_scale: node.scale    = scale
-                if do_rot:   node.rotation = rot
-                if do_pos:   node.pos      = pos
-            return
-
-        # With key: MAXScript in a ( ) block so 'local' can be used
-        n_name = node.name.replace('"', '\\"')
-        rx = -rot_list[0] if mirror else rot_list[0]
-        ry, rz = rot_list[1], rot_list[2]
-        rw = -rot_list[3] if mirror else rot_list[3]
-
-        pos_s   = f"[{px},{py},{pz}]"
-        rot_s   = f"(quat {rx} {ry} {rz} {rw})"
-        scale_s = f"[{sx},{sy},{sz}]"
-
-        body_lines = []
-        if additive:
-            if do_pos:   body_lines.append(f"      n.pos      += {pos_s}")
-            if do_rot:   body_lines.append(f"      n.rotation  = n.rotation * {rot_s}")
-            if do_scale: body_lines.append(f"      n.scale    *= {scale_s}")
-        else:
-            if do_scale: body_lines.append(f"      n.scale     = {scale_s}")
-            if do_rot:   body_lines.append(f"      n.rotation  = {rot_s}")
-            if do_pos:   body_lines.append(f"      n.pos       = {pos_s}")
-
-        if not body_lines:
-            return
-
-        body = "\n".join(body_lines)
-        mxs = (
-            "(\n"
-            f'  local n = getNodeByName "{n_name}"\n'
-            "  if n != undefined do (\n"
-            "    at time currentTime animate on (\n"
-            f"{body}\n"
-            "    )\n"
-            "  )\n"
-            ")"
-        )
-        rt.execute(mxs)
-
-    except Exception as e:
-        print(f"[StudioLibMAX] Error on '{node.name}': {e}")
+            rt.suspendEditing()
+            try:
+                _do()
+            finally:
+                rt.resumeEditing()
+    rt.redrawViews()
+    return {"applied": applied, "missing": missing, "errors": errors, "only_selected": only_selected}
 
 
 def capture_viewport_to_file(out_path):
@@ -242,6 +476,57 @@ def capture_viewport_to_file(out_path):
             print(f"[thumb C grabView+filename] {e}")
 
     return captured
+
+
+def rename_nodes_in_pose_data(data, mapping):
+    """Applies an old→new object-name mapping to a pose (names, parents, metadata)."""
+    for node in data.get("nodes", []):
+        if node.get("name") in mapping:
+            node["name"] = mapping[node["name"]]
+        if node.get("parent") in mapping:
+            node["parent"] = mapping[node["parent"]]
+    contains = data.get("metadata", {}).get("contains", "")
+    if contains:
+        parts = [mapping.get(p.strip(), p.strip()) for p in contains.split(",")]
+        data["metadata"]["contains"] = ",".join(parts)
+    return data
+
+
+def _current_frame():
+    """Current frame as a number, or None (only informational metadata — never fails a save)."""
+    try:
+        return round(float(rt.execute("(currentTime as float) / TicksPerFrame")), 3)
+    except Exception:
+        return None
+
+
+_INVALID_NAME_CHARS = '\\/:*?"<>|'
+
+
+def validate_name(name):
+    """Returns an error message for names Windows can't use as a folder, else ''."""
+    name = name.strip()
+    if not name:
+        return "Name cannot be empty."
+    bad = sorted({c for c in name if c in _INVALID_NAME_CHARS})
+    if bad:
+        return "Name can't contain:  " + "  ".join(bad)
+    if name.endswith(".") or name.upper() in {"CON", "PRN", "AUX", "NUL"}:
+        return "That name is reserved by Windows."
+    return ""
+
+
+PREVIEW_MAX_W = 480   # stored preview.png size — the grid and panel never need more
+
+
+def save_preview_png(src_path, dst_path, max_w=PREVIEW_MAX_W):
+    """Copies an image as a downscaled PNG (full-screen captures made the grid slow)."""
+    pix = QtGui.QPixmap(src_path)
+    if pix.isNull():
+        return False
+    if pix.width() > max_w:
+        pix = pix.scaledToWidth(max_w, QtCore.Qt.SmoothTransformation)
+    return pix.save(dst_path, "PNG")
 
 
 def make_pose_icon(preview_path):
@@ -516,15 +801,7 @@ class PoseDetailsDialog(QtWidgets.QDialog):
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Rename in nodes
-            for node in data.get("nodes", []):
-                if node["name"] in mapping:
-                    node["name"] = mapping[node["name"]]
-            # Rename in metadata.contains
-            contains = data.get("metadata", {}).get("contains", "")
-            if contains:
-                parts = [mapping.get(p.strip(), p.strip()) for p in contains.split(",")]
-                data["metadata"]["contains"] = ",".join(parts)
+            rename_nodes_in_pose_data(data, mapping)
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
             # Update local list
@@ -592,7 +869,7 @@ class BatchRenameMultiDialog(QtWidgets.QDialog):
                 background: {C_BG3};
             }}
             QCheckBox::indicator:checked {{
-                background: {C_BORDER_HI}; border-color: #888;
+                background: {C_CHECK_BG}; border-color: {C_CHECK_BO}; image: url({CHECK_ICON});
             }}
             QGroupBox {{
                 border: 1px solid {C_BORDER}; border-radius: 5px;
@@ -741,14 +1018,7 @@ class BatchRenameMultiDialog(QtWidgets.QDialog):
             try:
                 with open(json_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                for node in data.get("nodes", []):
-                    if node["name"] in mapping:
-                        node["name"] = mapping[node["name"]]
-                contains = data.get("metadata", {}).get("contains", "")
-                if contains:
-                    parts = [mapping.get(p.strip(), p.strip())
-                             for p in contains.split(",")]
-                    data["metadata"]["contains"] = ",".join(parts)
+                rename_nodes_in_pose_data(data, mapping)
                 with open(json_file, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=4)
                 done += 1
@@ -943,6 +1213,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         )
         self.items_view.itemClicked.connect(self.on_pose_selected)
         self.items_view.itemDoubleClicked.connect(self.apply_selected_pose)
+        # Comment edits are saved 0.8 s after typing stops (not on every keystroke)
+        self._comment_timer = QtCore.QTimer(self)
+        self._comment_timer.setSingleShot(True)
+        self._comment_timer.setInterval(800)
+        self._comment_timer.timeout.connect(self._save_comment)
         self.items_view.mousePressEvent = self.items_view_mouse_press
         # Drag from the poses panel
         self.items_view.setDragEnabled(True)
@@ -1023,9 +1298,17 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         self.opt_key      = big_check("Key")
         self.opt_mirror   = big_check("Mirror")
         self.opt_additive = big_check("Additive")
+        self.opt_world    = big_check("World space")
+        self.opt_key.setToolTip("Set keyframes on the current frame (undoable)")
+        self.opt_mirror.setToolTip("Mirror across X. Left/right objects (L/R, Left/Right…) swap their poses")
+        self.opt_additive.setToolTip("Add the pose on top of the current transforms")
+        self.opt_world.setToolTip(
+            "Off: pose is relative to each object's parent — it follows the rig if the parent moved\n"
+            "On: objects go to the exact world position they had when the pose was saved")
         opts_v.addWidget(self.opt_key)
         opts_v.addWidget(self.opt_mirror)
         opts_v.addWidget(self.opt_additive)
+        opts_v.addWidget(self.opt_world)
 
         # Thin separator
         sep = QtWidgets.QFrame()
@@ -1052,6 +1335,16 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         trs_row.addWidget(self.filter_s)
         trs_row.addStretch(1)
         opts_v.addLayout(trs_row)
+
+        # Options are remembered between sessions
+        self._option_boxes = {"key": self.opt_key, "mirror": self.opt_mirror,
+                              "additive": self.opt_additive, "world": self.opt_world,
+                              "t": self.filter_t, "r": self.filter_r, "s": self.filter_s}
+        for k, v in load_options().items():
+            self._option_boxes[k].setChecked(v)
+        for cb in self._option_boxes.values():
+            cb.toggled.connect(lambda _=False: save_options(
+                {k: b.isChecked() for k, b in self._option_boxes.items()}))
 
         self.apply_btn = QtWidgets.QPushButton("Apply Pose")
         self.apply_btn.setObjectName("apply_btn")
@@ -1364,9 +1657,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
                 background-color: {C_BG3};
             }}
             QCheckBox::indicator:checked {{
-                background-color: {C_BORDER_HI};
-                border-color: #888888;
+                background-color: {C_CHECK_BG};
+                border-color: {C_CHECK_BO};
+                image: url({CHECK_ICON});
             }}
+            QCheckBox::indicator:hover {{ border-color: #8a8a8a; }}
             QMenu {{
                 background-color: {C_BG2};
                 color: {C_TEXT};
@@ -1640,7 +1935,10 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
     def on_pose_selected(self, item):
         real_name = item.data(QtCore.Qt.UserRole)
+        if self._comment_timer.isActive():          # flush a pending comment edit first
+            self._comment_timer.stop(); self._save_comment()
         self.current_pose_path  = os.path.join(self.current_folder_path, real_name)
+        self._comment_pose_path = self.current_pose_path
         self._current_pose_nodes = []
         self._build_default_preview_panel()
 
@@ -1674,15 +1972,16 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
                 except Exception:
                     self.created_info.setText(created)
                 contains = m.get("contains", "")
-                cnt = len(contains.split(",")) if contains else 0
+                cnt = len(d.get("nodes", [])) or (len(contains.split(",")) if contains else 0)
                 self.contains_info.setText(f"{cnt} object{'s' if cnt != 1 else ''}")
+                self.comment_info.blockSignals(True)
                 self.comment_info.setPlainText(m.get("comment", ""))
-                # Hook up auto-save when the comment is edited
-                try:
-                    self.comment_info.textChanged.disconnect()
-                except Exception:
-                    pass
-                self.comment_info.textChanged.connect(self._save_comment)
+                self.comment_info.blockSignals(False)
+                # Hook up auto-save when the comment is edited (connect only once —
+                # disconnecting an unconnected signal printed warnings in the Listener)
+                if getattr(self, "_comment_hooked", None) is not self.comment_info:
+                    self.comment_info.textChanged.connect(self._comment_timer.start)
+                    self._comment_hooked = self.comment_info
                 # Store node list for Details
                 nodes_data = d.get("nodes", [])
                 self._current_pose_nodes = [nd["name"] for nd in nodes_data]
@@ -1730,47 +2029,35 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             self.status_bar.showMessage("Pose has no node data.")
             return
 
-        do_key      = self.opt_key.isChecked()
-        do_mirror   = self.opt_mirror.isChecked()
-        do_additive = self.opt_additive.isChecked()
-        do_pos      = self.filter_t.isChecked()
-        do_rot      = self.filter_r.isChecked()
-        do_scale    = self.filter_s.isChecked()
-
-        applied = 0
-        missing = []
-        # NOTE: suspendEditing() blocks animate on — NOT used when key=True
-        if not do_key:
-            rt.suspendEditing()
         try:
-            for nd in nodes_data:
-                obj = rt.getNodeByName(nd["name"])
-                if obj is None:
-                    missing.append(nd["name"])
-                    continue
-                apply_node_transform(
-                    obj,
-                    nd.get("position", [0, 0, 0]),
-                    nd.get("rotation", [0, 0, 0, 1]),
-                    nd.get("scale",    [1, 1, 1]),
-                    mirror=do_mirror,
-                    additive=do_additive,
-                    key=do_key,
-                    do_pos=do_pos,
-                    do_rot=do_rot,
-                    do_scale=do_scale,
-                )
-                applied += 1
-        finally:
-            if not do_key:
-                rt.resumeEditing()
-            rt.redrawViews()
+            result = apply_pose(
+                nodes_data,
+                key=self.opt_key.isChecked(),
+                mirror=self.opt_mirror.isChecked(),
+                additive=self.opt_additive.isChecked(),
+                world_space=self.opt_world.isChecked(),
+                do_pos=self.filter_t.isChecked(),
+                do_rot=self.filter_r.isChecked(),
+                do_scale=self.filter_s.isChecked(),
+                selection=list(rt.selection),
+            )
+        except Exception as e:
+            self.status_bar.showMessage(f"Apply failed: {e}")
+            print(f"[StudioLibMAX] apply: {e}")
+            return
 
-        msg = f"Pose applied: {applied} object(s)"
-        if missing:
-            msg += f"  |  Not found: {', '.join(missing)}"
-        if do_key:
+        msg = f"Pose applied: {result['applied']} object(s)"
+        if result["only_selected"]:
+            msg += " (selected only)"
+        if self.opt_key.isChecked():
             msg += "  |  Keys set"
+        if result["missing"]:
+            miss = result["missing"]
+            msg += f"  |  Not found: {', '.join(miss[:6])}" + (f" +{len(miss) - 6}" if len(miss) > 6 else "")
+        if result["errors"]:
+            msg += f"  |  {len(result['errors'])} error(s) — see Listener"
+            for e in result["errors"]:
+                print(f"[StudioLibMAX] {e}")
         self.status_bar.showMessage(msg)
 
     # ---------------------------------------------
@@ -1898,21 +2185,13 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         if pix.isNull():
             self.status_bar.showMessage("Invalid image.")
             return
-        pix_s = pix.scaled(THUMB_W, THUMB_H, QtCore.Qt.KeepAspectRatioByExpanding,
-                            QtCore.Qt.SmoothTransformation)
-        ox = (pix_s.width()  - THUMB_W) // 2
-        oy = (pix_s.height() - THUMB_H) // 2
-        pix_crop = pix_s.copy(ox, oy, THUMB_W, THUMB_H)
-        import tempfile, os as _os
-        tmp = _os.path.join(tempfile.gettempdir(), "_slmax_loadimg.png")
-        pix_crop.save(tmp, "PNG")
-        self._tmp_thumb_path = tmp
+        self._tmp_thumb_path = path          # downscaled when the pose is saved
         w = self.new_pose_preview_label.width() or THUMB_W
         h = self.new_pose_preview_label.height() or THUMB_H
         self.new_pose_preview_label.setPixmap(
-            pix_crop.scaled(w, h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            pix.scaled(w, h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         )
-        self.status_bar.showMessage("Image loaded OK.")
+        self.status_bar.showMessage("Image loaded.")
 
     def _generate_thumbnail_for_existing_pose(self):
         """Generates and replaces the thumbnail of an already saved pose."""
@@ -1920,10 +2199,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             self.status_bar.showMessage("Select a pose first.")
             return
         out_path = os.path.join(self.current_pose_path, "preview.png")
-        if os.path.exists(out_path):
-            try: os.remove(out_path)
+        tmp_path = os.path.join(tempfile.gettempdir(), "_slmax_thumb_replace.png")
+        if os.path.exists(tmp_path):
+            try: os.remove(tmp_path)
             except Exception: pass
-        ok = capture_viewport_to_file(out_path)
+        ok = capture_viewport_to_file(tmp_path) and save_preview_png(tmp_path, out_path)
         if ok and os.path.exists(out_path):
             pix = QtGui.QPixmap(out_path)
             w = self.preview_label.width() or 230
@@ -1954,15 +2234,12 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             if pix.isNull():
                 self.status_bar.showMessage("Load thumbnail: invalid image.")
                 return
-            pix_scaled = pix.scaled(THUMB_W, THUMB_H, QtCore.Qt.KeepAspectRatioByExpanding,
-                                    QtCore.Qt.SmoothTransformation)
-            ox = (pix_scaled.width()  - THUMB_W) // 2
-            oy = (pix_scaled.height() - THUMB_H) // 2
-            pix_crop = pix_scaled.copy(ox, oy, THUMB_W, THUMB_H)
-            pix_crop.save(dst, "PNG")
+            if not save_preview_png(path, dst):
+                self.status_bar.showMessage("Load thumbnail: could not write preview.png.")
+                return
             # Update preview immediately
-            pix_show = pix_crop.scaled(230, 188, QtCore.Qt.KeepAspectRatio,
-                                       QtCore.Qt.SmoothTransformation)
+            pix_show = QtGui.QPixmap(dst).scaled(230, 188, QtCore.Qt.KeepAspectRatio,
+                                                 QtCore.Qt.SmoothTransformation)
             self.preview_label.setPixmap(pix_show)
             # Reload the grid to show the new thumb
             self.load_poses_from_folder(self.current_folder_path)
@@ -1971,46 +2248,18 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             self.status_bar.showMessage(f"Load thumbnail error: {e}")
 
     def generate_thumbnail(self):
-        """
-        Captures the active viewport:
-        1. Zoom extents on the selected object (centers the camera).
-        2. Enables solid shading (no background gradient).
-        3. Captures with gw.getViewportDib().
-        4. Restores the viewport state.
-        """
-        if not self.library_path:
-            self.status_bar.showMessage("Thumbnail: select a library first.")
-            return
-
-        out_path = os.path.join(self.library_path, "_thumb_preview.png")
+        """Captures the active viewport exactly as you see it (no changes to shading,
+        display gamma or framing) into a temp file used when the pose is saved."""
+        out_path = os.path.join(tempfile.gettempdir(), "_slmax_thumb_preview.png")
         if os.path.exists(out_path):
             try:
                 os.remove(out_path)
             except Exception:
                 pass
-
-        # 1. Zoom to the selected object and solid background
-        # Store the gradient state to restore it afterwards
-        rt.execute("(viewport.setRenderLevel #smoothhighlights)")
-        try:
-            # Disable the viewport background gradient
-            rt.execute(
-                "( local vc = viewport.getCamera() ; "
-                "  IDisplayGamma.displayGamma = 1.0 ;"
-                "  if selection.count > 0 do "
-                "    max zoomext sel all )"
-            )
-        except Exception:
-            pass
-
         ok = capture_viewport_to_file(out_path)
-
         if not ok or not os.path.exists(out_path):
-            self.status_bar.showMessage(
-                "Thumbnail: capture failed. Check MAX 2010+."
-            )
+            self.status_bar.showMessage("Thumbnail: viewport capture failed.")
             return
-
         self._tmp_thumb_path = out_path
         w = self.new_pose_preview_label.width() or 230
         h = self.new_pose_preview_label.height() or 152
@@ -2018,7 +2267,7 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             w, h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
         )
         self.new_pose_preview_label.setPixmap(pix)
-        self.status_bar.showMessage("Thumbnail captured OK.")
+        self.status_bar.showMessage("Thumbnail captured.")
 
     def save_new_pose(self):
         if not self.current_folder_path:
@@ -2028,8 +2277,9 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Warning", "Select at least one object.")
             return
         name = self.new_pose_name.text().strip()
-        if not name:
-            QtWidgets.QMessageBox.warning(self, "Warning", "Pose name cannot be empty.")
+        err = validate_name(name)
+        if err:
+            QtWidgets.QMessageBox.warning(self, "Warning", err)
             return
         comment = self.new_pose_comment.toPlainText().strip()
 
@@ -2037,30 +2287,31 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         if os.path.exists(target):
             QtWidgets.QMessageBox.warning(self, "Warning", f"Pose '{name}' already exists.")
             return
-        os.makedirs(target)
-
-        nodes    = list(rt.selection)
-        contains = ",".join(n.name for n in nodes)
-        metadata = {
-            "name":     name,
-            "owner":    getpass.getuser(),
-            "created":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "contains": contains,
-            "comment":  comment,
-        }
-        node_data = [{
-            "name":     node.name,
-            "position": [node.pos.x,   node.pos.y,   node.pos.z],
-            "rotation": quat_to_list(node.rotation),
-            "scale":    [node.scale.x,  node.scale.y,  node.scale.z],
-        } for node in nodes]
-
-        with open(os.path.join(target, "pose_data.json"), "w", encoding="utf-8") as f:
-            json.dump({"metadata": metadata, "nodes": node_data}, f, indent=4)
-
-        thumb_dst = os.path.join(target, "preview.png")
-        if self._tmp_thumb_path and os.path.exists(self._tmp_thumb_path):
-            shutil.copy2(self._tmp_thumb_path, thumb_dst)
+        nodes = list(rt.selection)
+        try:
+            node_data = [capture_node(node) for node in nodes]
+            metadata = {
+                "name":     name,
+                "owner":    getpass.getuser(),
+                "created":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "contains": ",".join(n.name for n in nodes),
+                "count":    len(nodes),
+                "comment":  comment,
+                "format":   2,
+                "frame":    _current_frame(),
+                "scene":    str(rt.maxFileName),
+            }
+            os.makedirs(target)
+            with open(os.path.join(target, "pose_data.json"), "w", encoding="utf-8") as f:
+                json.dump({"metadata": metadata, "nodes": node_data}, f, indent=4)
+            if self._tmp_thumb_path and os.path.exists(self._tmp_thumb_path):
+                save_preview_png(self._tmp_thumb_path, os.path.join(target, "preview.png"))
+        except Exception as e:
+            # no half-written pose folders left behind
+            if os.path.isdir(target):
+                shutil.rmtree(target, ignore_errors=True)
+            QtWidgets.QMessageBox.critical(self, "Save Pose", f"Could not save the pose:\n{e}")
+            return
 
         self._clear_preview_layout()  # clears the Save Pose form before reloading
         self.load_poses_from_folder(self.current_folder_path)
@@ -2135,10 +2386,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         event.acceptProposedAction()
 
     def _save_comment(self):
-        """Saves the edited comment directly to pose_data.json."""
-        if not self.current_pose_path:
+        """Saves the edited comment to pose_data.json (debounced — not on every keystroke)."""
+        path = getattr(self, "_comment_pose_path", None) or self.current_pose_path
+        if not path:
             return
-        json_file = os.path.join(self.current_pose_path, "pose_data.json")
+        json_file = os.path.join(path, "pose_data.json")
         if not os.path.exists(json_file):
             return
         try:
@@ -2179,18 +2431,25 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             selected = self.items_view.selectedItems()
             if item:
                 if len(selected) > 1:
+                    so = menu.addAction(f"Select Objects of {len(selected)} poses")
+                    menu.addSeparator()
                     d = menu.addAction(f"Delete {len(selected)} poses")
                     br = menu.addAction(f"Batch Rename Objects in {len(selected)} poses…")
                     act = menu.exec(self.items_view.viewport().mapToGlobal(pos))
-                    if act == d:
+                    if act == so:
+                        self.select_pose_objects(selected)
+                    elif act == d:
                         self._delete_multiple_poses(selected)
                     elif act == br:
                         self._batch_rename_multi_poses(selected)
                 else:
+                    so = menu.addAction("Select Objects")
+                    menu.addSeparator()
                     r = menu.addAction("Rename Pose")
                     d = menu.addAction("Delete Pose")
                     act = menu.exec(self.items_view.viewport().mapToGlobal(pos))
-                    if act == r:   self.rename_pose(item)
+                    if act == so:  self.select_pose_objects([item])
+                    elif act == r: self.rename_pose(item)
                     elif act == d: self.delete_pose(item)
             else:
                 if self.current_folder_path:
@@ -2201,6 +2460,30 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
     # ---------------------------------------------
     #  Folder CRUD
     # ---------------------------------------------
+
+    def select_pose_objects(self, items):
+        """Selects in the scene every object stored in the given poses."""
+        names, missing = [], []
+        for it in items:
+            jf = os.path.join(self.current_folder_path, it.data(QtCore.Qt.UserRole), "pose_data.json")
+            try:
+                with open(jf, "r", encoding="utf-8") as f:
+                    names += [nd["name"] for nd in json.load(f).get("nodes", [])]
+            except Exception as e:
+                print(f"[StudioLibMAX] select objects: {e}")
+        nodes = []
+        for nm in dict.fromkeys(names):
+            n = find_node(nm)
+            (nodes.append(n) if n is not None else missing.append(nm))
+        with pymxs.undo(True, "STM Select Pose Objects"):
+            rt.clearSelection()
+            if nodes:
+                rt.select(nodes)
+        rt.redrawViews()
+        msg = f"Selected {len(nodes)} object(s)"
+        if missing:
+            msg += f"  |  Not found: {', '.join(missing[:6])}" + (f" +{len(missing) - 6}" if len(missing) > 6 else "")
+        self.status_bar.showMessage(msg)
 
     def _batch_rename_multi_poses(self, items):
         """Opens a Batch Rename dialog that applies to all selected poses."""
@@ -2239,6 +2522,8 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             return
         name, ok = QtWidgets.QInputDialog.getText(self, "New Subfolder", "Name:")
         if not ok or not name.strip(): return
+        if validate_name(name):
+            QtWidgets.QMessageBox.warning(self, "Warning", validate_name(name)); return
         tg = os.path.join(self.current_folder_path, name.strip())
         if os.path.exists(tg):
             QtWidgets.QMessageBox.warning(self, "Warning", "Folder already exists.")
@@ -2254,6 +2539,8 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             return
         name, ok = QtWidgets.QInputDialog.getText(self, "New Folder", "Name:")
         if not ok or not name.strip(): return
+        if validate_name(name):
+            QtWidgets.QMessageBox.warning(self, "Warning", validate_name(name)); return
         tg = os.path.join(root, name.strip())
         if os.path.exists(tg):
             QtWidgets.QMessageBox.warning(self, "Warning", "Folder already exists.")
@@ -2267,6 +2554,8 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
         old = item.text(0)
         new, ok = QtWidgets.QInputDialog.getText(self, "Rename Folder", "New name:", text=old)
         if not ok or not new.strip() or new == old: return
+        if validate_name(new):
+            QtWidgets.QMessageBox.warning(self, "Warning", validate_name(new)); return
         src = item.data(0, QtCore.Qt.UserRole)
         dst = os.path.join(os.path.dirname(src), new.strip())
         if os.path.exists(dst):
@@ -2311,9 +2600,11 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             self, "Rename Pose", "New name:", text=item.text()
         )
         if not ok or not new.strip(): return
+        if validate_name(new):
+            QtWidgets.QMessageBox.warning(self, "Warning", validate_name(new)); return
         src = os.path.join(self.current_folder_path, real_name)
         dst = os.path.join(self.current_folder_path, f"{new.strip()}.pose")
-        if os.path.exists(dst):
+        if os.path.exists(dst) and os.path.normcase(dst) != os.path.normcase(src):
             QtWidgets.QMessageBox.warning(self, "Warning", "Pose already exists.")
             return
         os.rename(src, dst)

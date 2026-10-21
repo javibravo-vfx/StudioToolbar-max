@@ -10,6 +10,7 @@ QT_QPA_PLATFORM=offscreen python dev/test_features.py  StudioToolbar-max.py
 QT_QPA_PLATFORM=offscreen python dev/preview.py        StudioToolbar-max.py   # toolbar + menus PNGs
 QT_QPA_PLATFORM=offscreen python dev/test_setup.py     StudioToolbar-max.py   # Setup dialog tests
 QT_QPA_PLATFORM=offscreen python dev/render_setup_pages.py StudioToolbar-max.py setup_   # Setup pages PNGs
+QT_QPA_PLATFORM=offscreen python dev/test_studiolibrary.py maintools/STM_StudioLibraryMAX.py   # pose engine + UI
 ```
 
 They are not used by the toolbar itself. Fonts differ from Windows (no Tahoma), so

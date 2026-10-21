@@ -1,5 +1,19 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.6.4 — StudioLibrary MAX 2.1.0
+- **Fix: poses of linked objects needed two pastes.** Poses were applied in selection order in world space, so a child placed before its parent got dragged away when the parent moved. Objects are now applied parents-first — one paste is enough
+- Poses store full transforms (world + parent-relative). Default apply is relative to the parent (the pose follows the rig, like Maya's Studio Library); new **World space** option for the exact captured positions. Old poses still apply
+- Apply Pose is one Undo step; Key uses pymxs animate / at time instead of generated MAXScript
+- If some of the pose's objects are selected, only those receive it (status says "selected only")
+- Mirror swaps L/R objects (L/R, Left/Right, Lft/Rgt) when the counterpart exists
+- Duplicate object names: the selected one wins
+- Thumbnail capture no longer changes display gamma, shading mode or viewport framing; previews stored at max 480 px (grid loads faster)
+- Pose/folder names validated; failed saves leave no empty folders
+- Comment saved 0.8 s after typing stops (it rewrote the JSON on every key and every time a pose was selected)
+- Options remembered between sessions; checked boxes clearly visible; new context-menu **Select Objects**
+- Renaming objects in a pose also updates parent references
+- `dev/test_studiolibrary.py`: simulated Max scene with real parent/child behaviour (17 tests)
+
 ## v2.6.3
 - **Install:** `startup/StudioToolbar-max_Start.ms` — copy into a Max `scripts\startup` folder so the toolbar opens with 3ds Max (checks the path and reports in the Listener if the toolbar file is missing). README has the per-user and all-users folders
 - **Everything in English:** comments, docstrings and on-screen text of the toolbar and every bundled script (CarRig UI, StudioLibrary messages, MAXScript helpers). Verified with `dev/check_text_only.py`: only comments/strings changed, code identical

@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-StudioLibrary MAX v2.1.0
+StudioLibrary MAX v2.1.1
+
+Changes v2.1.1:
+- Remembers the window position and size, the last folder and the last pose; reopening
+  puts everything back where you left it (off-screen positions are re-centred).
+- Opening it again brings the existing window to the front instead of creating a second one.
+- Selecting another folder clears the current pose (Apply could use a pose from the old folder).
 
 Changes v2.1.0:
 - FIX: poses of linked objects needed two pastes. Poses were applied in selection order in
@@ -53,7 +59,7 @@ from datetime import datetime
 
 rt = pymxs.runtime
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 # -------------------------------------------------------------
 #  UI constants
@@ -137,6 +143,27 @@ def save_state(library_path, current_project=""):
     }
     with open(_settings_path(), "w", encoding="utf-8") as f:
         cfg.write(f)
+
+
+def load_window_state():
+    """Last window geometry (base64), folder and pose — restored when the window opens."""
+    cfg = configparser.ConfigParser()
+    cfg.read(_settings_path(), encoding="utf-8")
+    return {k: cfg.get("window", k, fallback="") for k in ("geometry", "folder", "pose")}
+
+
+def save_window_state(**values):
+    try:
+        cfg = configparser.ConfigParser()
+        cfg.read(_settings_path(), encoding="utf-8")
+        if "window" not in cfg:
+            cfg["window"] = {}
+        for k, v in values.items():
+            cfg["window"][k] = v or ""
+        with open(_settings_path(), "w", encoding="utf-8") as f:
+            cfg.write(f)
+    except Exception as e:
+        print(f"[StudioLibMAX] save window state: {e}")
 
 
 OPTION_KEYS = ("key", "mirror", "additive", "world", "t", "r", "s")
@@ -1405,6 +1432,98 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             self._load_library(state["library_path"],
                                restore_project=state["current_project"])
 
+        # Remember where the window was and what was open
+        self._version = __version__
+        self._geom_timer = QtCore.QTimer(self)
+        self._geom_timer.setSingleShot(True)
+        self._geom_timer.setInterval(800)
+        self._geom_timer.timeout.connect(self._save_window_geometry)
+        self._restore_window_state()
+
+    # ---------------------------------------------
+    #  Window position / last folder & pose
+    # ---------------------------------------------
+
+    def _restore_window_state(self):
+        ws = load_window_state()
+        geo = ws.get("geometry")
+        if geo:
+            try:
+                self.restoreGeometry(QtCore.QByteArray.fromBase64(geo.encode("ascii")))
+            except Exception:
+                pass
+        self._ensure_on_screen()
+        # last folder → last pose
+        folder = ws.get("folder")
+        if folder and os.path.isdir(folder):
+            it = self._find_folder_item(folder)
+            if it is not None:
+                p = it.parent()
+                while p is not None:
+                    p.setExpanded(True); p = p.parent()
+                self.sidebar.setCurrentItem(it)
+                self.on_folder_selected(it, 0)
+                pose = ws.get("pose")
+                if pose:
+                    for i in range(self.items_view.count()):
+                        pit = self.items_view.item(i)
+                        if pit.data(QtCore.Qt.UserRole) == pose:
+                            self.items_view.setCurrentItem(pit)
+                            self.items_view.scrollToItem(pit)
+                            self.on_pose_selected(pit)
+                            break
+
+    def _find_folder_item(self, path):
+        target = os.path.normcase(os.path.normpath(path))
+        stack = [self.sidebar.topLevelItem(i) for i in range(self.sidebar.topLevelItemCount())]
+        while stack:
+            it = stack.pop()
+            p = it.data(0, QtCore.Qt.UserRole)
+            if p and os.path.normcase(os.path.normpath(p)) == target:
+                return it
+            stack += [it.child(i) for i in range(it.childCount())]
+        return None
+
+    def _ensure_on_screen(self):
+        """If the saved position is off every screen (monitor unplugged…), centre the window."""
+        frame = self.frameGeometry()
+        for scr in QtGui.QGuiApplication.screens():
+            if scr.availableGeometry().intersects(frame) and \
+               scr.availableGeometry().contains(frame.topLeft() + QtCore.QPoint(40, 15)):
+                return
+        scr = QtGui.QGuiApplication.primaryScreen()
+        if scr is not None:
+            g = scr.availableGeometry()
+            w, h = min(self.width(), g.width() - 40), min(self.height(), g.height() - 40)
+            self.resize(w, h)
+            self.move(g.center() - QtCore.QPoint(w // 2, h // 2))
+
+    def _save_window_geometry(self):
+        save_window_state(geometry=bytes(self.saveGeometry().toBase64()).decode("ascii"))
+
+    def _save_selection_state(self):
+        pose = None
+        if self.current_pose_path:
+            pose = os.path.basename(self.current_pose_path)
+        save_window_state(folder=self.current_folder_path or "", pose=pose or "")
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if hasattr(self, "_geom_timer"): self._geom_timer.start()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_geom_timer"): self._geom_timer.start()
+
+    def closeEvent(self, event):
+        if hasattr(self, "_geom_timer"):
+            self._geom_timer.stop()
+            self._save_window_geometry()
+            self._save_selection_state()
+        if getattr(self, "_comment_timer", None) is not None and self._comment_timer.isActive():
+            self._comment_timer.stop(); self._save_comment()
+        super().closeEvent(event)
+
     # ---------------------------------------------
     #  Right panel
     # ---------------------------------------------
@@ -1899,7 +2018,10 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 
     def on_folder_selected(self, item, column):
         self.current_folder_path = item.data(0, QtCore.Qt.UserRole)
+        self.current_pose_path = None
         self.load_poses_from_folder(self.current_folder_path)
+        if hasattr(self, "_geom_timer"):
+            self._save_selection_state()
 
     def load_poses_from_folder(self, folder):
         self.items_view.clear()
@@ -1939,6 +2061,8 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
             self._comment_timer.stop(); self._save_comment()
         self.current_pose_path  = os.path.join(self.current_folder_path, real_name)
         self._comment_pose_path = self.current_pose_path
+        if hasattr(self, "_geom_timer"):
+            self._save_selection_state()
         self._current_pose_nodes = []
         self._build_default_preview_panel()
 
@@ -2663,7 +2787,23 @@ class StudioLibraryMaxUI(QtWidgets.QWidget):
 #  Entry point
 # -------------------------------------------------------------
 
+def show_studio_library():
+    """Opens StudioLibrary MAX, or brings the already-open window to the front
+    (running it again used to create a second window)."""
+    existing = None
+    for w in QtWidgets.QApplication.topLevelWidgets():
+        if w.objectName() == "StudioLibMax":
+            if getattr(w, "_version", None) == __version__ and existing is None:
+                existing = w
+            else:
+                w.close(); w.deleteLater()           # older version of the script → replace
+    win = existing or StudioLibraryMaxUI()
+    win.show()
+    win.setWindowState(win.windowState() & ~QtCore.Qt.WindowMinimized)
+    win.raise_(); win.activateWindow()
+    return win
+
+
 if __name__ == "__main__":
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    window = StudioLibraryMaxUI()
-    window.show()
+    window = show_studio_library()

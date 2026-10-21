@@ -85,7 +85,7 @@ pymxs.animate = lambda *a: contextlib.nullcontext()
 pymxs.attime = lambda *a: contextlib.nullcontext()
 sys.modules["pymxs"] = pymxs
 
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 spec = importlib.util.spec_from_file_location("stm_lib", SRC)
 STM = importlib.util.module_from_spec(spec)
@@ -203,5 +203,31 @@ QtWidgets.QMessageBox = Box
 rt.selection = Sel([hips])
 ui.save_new_pose()
 check("invalid name: no folder created", not any("bad" in n for n in os.listdir(ui.current_folder_path)))
+
+# ── window position, last folder/pose, single window ─────────────────────────
+win1 = STM.show_studio_library()
+win1.resize(700, 500); win1.move(60, 40); app.processEvents()
+saved_size = (win1.width(), win1.height())          # clamped by the window's minimum size
+pose_item = win1.items_view.item(0) if win1.items_view.count() else None
+fi = win1._find_folder_item(os.path.join(lib, "PROJ", "Poses"))
+win1.sidebar.setCurrentItem(fi); win1.on_folder_selected(fi, 0)
+it2 = win1.items_view.item(0); win1.items_view.setCurrentItem(it2); win1.on_pose_selected(it2)
+app.processEvents(); win1.close(); app.processEvents()
+ws = STM.load_window_state()
+check("close saves geometry + folder + pose",
+      bool(ws["geometry"]) and ws["folder"].endswith("Poses") and ws["pose"] == "Wave.pose", str({k: v[:20] for k, v in ws.items()}))
+again = STM.show_studio_library()
+check("reopening reuses the same window (no duplicates)", again is win1)
+win1.close(); win1.deleteLater(); app.processEvents()
+for w in QtWidgets.QApplication.topLevelWidgets():
+    if w.objectName() == "StudioLibMax": w.setObjectName("old"); w.close()
+win2 = STM.StudioLibraryMaxUI(); win2.show(); app.processEvents()
+check("new window restores size (±4 px: restored pose panel can raise the min height)",
+      abs(win2.width() - saved_size[0]) <= 4 and abs(win2.height() - saved_size[1]) <= 4, f"{win2.width()}x{win2.height()} vs {saved_size}")
+check("new window restores last folder", (win2.current_folder_path or "").endswith("Poses"), str(win2.current_folder_path))
+check("new window restores last pose", (win2.current_pose_path or "").endswith("Wave.pose"), str(win2.current_pose_path))
+win2.move(-9000, -9000); win2._ensure_on_screen()
+scr = QtGui.QGuiApplication.primaryScreen().availableGeometry()
+check("off-screen position is brought back on screen", scr.intersects(win2.frameGeometry()))
 
 print(f"\n{len(fails)} failures", fails)

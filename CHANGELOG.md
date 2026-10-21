@@ -1,5 +1,10 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.6.6 — StudioLibrary MAX 2.1.1
+- StudioLibrary remembers window position/size, last folder and last pose, and reopens exactly there (re-centred if that monitor is gone)
+- Opening StudioLibrary again brings the open window to the front instead of creating a second window
+- Fix: changing folder kept the previous folder's pose as current (Apply could use it)
+
 ## v2.6.5
 - Fix: `.mse` (encrypted MAXScript) scripts listed in TOOLS ▾ did nothing when clicked — they now run like `.ms`
 

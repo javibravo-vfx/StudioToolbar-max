@@ -25,7 +25,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.6.4"
+VERSION = "2.6.5"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -1842,7 +1842,7 @@ class StudioToolbar(QtWidgets.QWidget):
             self._set_status("Not found", "#e06060"); return
         ext = os.path.splitext(path)[1].lower()
         try:
-            if ext == ".ms":
+            if ext in (".ms", ".mse"):
                 rt.fileIn(path); self._set_status("Loaded", "#70aa70")
             elif ext == ".py":
                 raw = open(path, "rb").read()

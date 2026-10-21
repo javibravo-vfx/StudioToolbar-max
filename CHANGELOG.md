@@ -1,5 +1,8 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.6.5
+- Fix: `.mse` (encrypted MAXScript) scripts listed in TOOLS ▾ did nothing when clicked — they now run like `.ms`
+
 ## v2.6.4 — StudioLibrary MAX 2.1.0
 - **Fix: poses of linked objects needed two pastes.** Poses were applied in selection order in world space, so a child placed before its parent got dragged away when the parent moved. Objects are now applied parents-first — one paste is enough
 - Poses store full transforms (world + parent-relative). Default apply is relative to the parent (the pose follows the rig, like Maya's Studio Library); new **World space** option for the exact captured positions. Old poses still apply

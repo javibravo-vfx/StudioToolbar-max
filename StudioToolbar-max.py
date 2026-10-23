@@ -26,7 +26,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -41,6 +41,7 @@ PATH_REMOVE_BACK = r"T:\.studio-toolbar\max\maintools\STM_RemoveBack.ms"
 PATH_TEXTURES    = r"T:\.studio-toolbar\max\maintools\STM_ShowTextures.ms"
 PATH_BAKE_CAM    = r"T:\.studio-toolbar\max\maintools\STM_BakeAlembic.ms"
 PATH_LIBRARY     = r"T:\.studio-toolbar\max\maintools\STM_StudioLibraryMAX.py"
+PATH_LOOKDEV     = r"T:\.studio-toolbar\max\maintools\STM_LookdevRig.py"
 PATH_TOOLS_DIR   = r"T:\.studio-toolbar\max\tools"
 
 # rootNode AppData slot where Set Paths stores the paths inside the .max
@@ -561,6 +562,19 @@ def _svg_bakecam(base, accent):
   <circle cx="21" cy="21" r="1.5" fill="{accent}"/>
   <path d="M3,21 C6,16.5 9,25 12,21 C15,16.5 18,25 21,21"
         fill="none" stroke="{base}" stroke-width="1.1" opacity="0.85"/>
+</svg>"""
+
+def _svg_lookdev(base, accent):
+    """Lookdev Rig — chrome ball with a highlight + a small colour chart."""
+    return f"""<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="9" cy="9.5" r="8" fill="none" stroke="{base}" stroke-width="1.5"/>
+  <path d="M4.3,7.2 A5.4,5.4 0 0 1 8.4,4.1" fill="none" stroke="{accent}" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="5.3" cy="10" r="1.1" fill="{accent}"/>
+  <rect x="13.2" y="13.2" width="10.3" height="10.3" rx="0.8" fill="#3a3a3a" stroke="{base}" stroke-width="1.2"/>
+  <rect x="14.9" y="14.9" width="3" height="3" fill="{accent}"/>
+  <rect x="18.8" y="14.9" width="3" height="3" fill="#d4b44a"/>
+  <rect x="14.9" y="18.8" width="3" height="3" fill="{base}" opacity="0.85"/>
+  <rect x="18.8" y="18.8" width="3" height="3" fill="{base}" opacity="0.4"/>
 </svg>"""
 
 def _svg_library(base, accent):
@@ -1252,6 +1266,7 @@ class StudioToolbar(QtWidgets.QWidget):
         # Show Textures lives in the TOOLS ▾ menu and the right-click menu (not on the bar)
         self.btn_paste_cam = IconToolButton(_svg_pastecam, base_color=MX_TEXT, accent_color=IC_ACCENT)
         self.btn_bake_cam  = IconToolButton(_svg_bakecam,   accent_color=IC_ACCENT)
+        self.btn_lookdev   = IconToolButton(_svg_lookdev,   accent_color=IC_ACCENT)
         self.btn_library   = LibraryIconButton()
 
         self.btn_overscan.setToolTip("Overscan\nAdjusts camera overscan — adds bleed area outside the render frame")
@@ -1259,10 +1274,11 @@ class StudioToolbar(QtWidgets.QWidget):
         self.btn_rem_back.setToolTip("Remove Background\nRemoves/hides the environment background from the scene")
         self.btn_paste_cam.setToolTip("Paste Cam: creates the camera copied from 3D Camera Pin")
         self.btn_bake_cam.setToolTip("Bake Camera\nSelect an Alembic camera — bakes its transform and FOV into a native Free Camera")
+        self.btn_lookdev.setToolTip("Lookdev Rig\nSelect an asset — builds camera, chrome/grey balls, colour chart and HDRI dome (turntable)")
         self.btn_library.setToolTip("Studio Library MAX\nOpens the pose/animation library manager")
 
         for b in [self.btn_overscan, self.btn_img_plane, self.btn_rem_back,
-                  self.btn_paste_cam, self.btn_bake_cam]:
+                  self.btn_paste_cam, self.btn_bake_cam, self.btn_lookdev]:
             L.addWidget(b)
             L.addSpacing(3)
         L.addSpacing(4)
@@ -1538,6 +1554,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._toolbar_context_menu)
         self.btn_bake_cam.clicked.connect(lambda: self._run_smart_script(PATH_BAKE_CAM))
+        self.btn_lookdev.clicked.connect(lambda: self._run_smart_script(PATH_LOOKDEV))
         self.btn_library.clicked.connect(lambda: self._run_smart_script(PATH_LIBRARY))
         self.btn_snap.clicked.connect(self._capture_viewport)
         self.res_w.valueChanged.connect(self._on_res_w_change)

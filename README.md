@@ -13,7 +13,7 @@ Designed for VFX studios — manages resolution, film size, FPS, pipeline naviga
 
 | Section | What it does |
 |---|---|
-| **Tools** | Quick-launch buttons: Overscan, Image Plane, Remove Background, **Paste Cam** (creates the camera copied from 3D Camera Pin), Bake Camera, Studio Library — plus a **TOOLS ▾** menu with Show Textures and every script in `tools/` (subfolders become submenus). Right-click the toolbar background for Show Textures / Pipeline Setup |
+| **Tools** | Quick-launch buttons: Overscan, Image Plane, Remove Background, **Paste Cam** (creates the camera copied from 3D Camera Pin), Bake Camera, **Lookdev Rig** (camera, chrome/grey balls, colour chart and HDRI dome turntable around the selection), Studio Library — plus a **TOOLS ▾** menu with Show Textures and every script in `tools/` (subfolders become submenus). Right-click the toolbar background for Show Textures / Pipeline Setup |
 | **Resolution** | W×H spinners, live aspect ratio, aspect lock, ×2 / ½. Preset list (arrow inside the label field) with your saved presets and standard formats (HD, UHD, DCI 2K/4K, Scope, square, vertical…) |
 | **Film gate** | Reads/writes aperture for Standard, V-Ray and Physical cameras. Preset list includes common cinema sensor widths (ARRI Alexa 35 / Mini / Mini LF, RED V-Raptor / Komodo, Sony Venice 2, Blackmagic, Super 35…) |
 | **FPS / Units** | Live sync; click FPS to switch frame rate |
@@ -78,6 +78,8 @@ maintools/               ← MAXScript helpers called by toolbar buttons
   STM_ShowTextures.ms
   STM_BakeAlembic.ms
   STM_StudioLibraryMAX.py
+  STM_LookdevRig.py      ← Lookdev Rig launcher
+  studio_lookdev_max/    ← Lookdev Rig: builder, dialog, render-engine adapters (vray, arnold, stubs)
 tools/                   ← optional extra tools
   STM_CarRig.ms
   STM_SuperAttach.ms
@@ -86,6 +88,20 @@ startup/                 ← copy into a Max scripts\startup folder (see Install
 docs/                    ← screenshots and documentation (not needed on the studio drive)
 dev/                     ← offline test harness (not needed on the studio drive)
 ```
+
+### Lookdev Rig shared data
+
+The Lookdev Rig reads data shared by every DCC toolbar, outside this repo:
+
+```
+T:\.studio-toolbar\shared\
+  lookdev\hdri\        ← drop HDRIs here (.exr/.hdr) + optional name.json sidecar + name.jpg thumbnail
+  lookdev\presets\     ← turntable_default.json (framing, refs, turntable timing)
+  lookdev\reference\   ← colorchecker24.json
+  python\studio_lookdev\core.py   ← DCC-agnostic framing / layout / colour math
+```
+
+If the shared folder is missing, the Lookdev button says so. Use `STUDIO_TOOLBAR_ROOT` to point elsewhere.
 
 ---
 

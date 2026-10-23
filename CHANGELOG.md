@@ -1,5 +1,16 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.0
+- **New: Lookdev Rig** (TOOLS section, after Bake Camera) — select an asset and build a lookdev / turntable setup around it
+  - Camera framed automatically from the asset's bounding sphere (works for any size; uses render aspect)
+  - Chrome ball, 18% grey ball and a procedural 24-patch ColorChecker (values converted to ACEScg), parented to the camera at a fixed size on screen
+  - Dome light with an HDRI picked from the shared library `T:\.studio-toolbar\shared\lookdev\hdri\` (optional `.json` sidecar for rotation offset / intensity, `.jpg` thumbnail)
+  - Turntable without touching the asset: camera + refs + dome orbit together (object pass), then only the dome spins (HDRI pass)
+  - Detects the renderer: V-Ray and Arnold implemented; Redshift and Octane adapters registered as stubs
+  - Everything lives on layer `LOOKDEV_RIG` with prefix `LKD_`; rebuilding replaces it, **Delete rig** removes it; one Undo step
+- Code: `maintools/STM_LookdevRig.py` (launcher) + `maintools/studio_lookdev_max/`; the DCC-agnostic core, presets and HDRIs live in `T:\.studio-toolbar\shared\` so the Houdini / Blender / Maya toolbars read the same data
+- `dev/test_features.py`: Lookdev button checks
+
 ## v2.7.0
 - **New: Paste Cam** (TOOLS section) — creates the camera copied with the Copy button of 3D Camera Pin
   - Reads the clipboard; if it is empty or doesn't contain "Camera Pin", warns and runs nothing

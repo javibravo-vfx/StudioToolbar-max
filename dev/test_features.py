@@ -176,5 +176,9 @@ pick["text"] = "Show Textures"; mgr2._open_tools_menu(); pick["text"] = None
 check("Show Textures in TOOLS menu", ran and ran[-1] == stm.PATH_TEXTURES)
 pick["text"] = "Show Textures"; mgr2._toolbar_context_menu(QtCore.QPoint(5, 5)); pick["text"] = None
 check("Show Textures in right-click menu", len(ran) == 2 and ran[-1] == stm.PATH_TEXTURES)
+mgr2.btn_lookdev.click()
+check("Lookdev button runs STM_LookdevRig.py", ran[-1] == stm.PATH_LOOKDEV and ran[-1].endswith("STM_LookdevRig.py"))
+check("Lookdev launcher exists in maintools",
+      os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "maintools", "STM_LookdevRig.py")))
 
 print("\n%d failures" % len(fails), fails)

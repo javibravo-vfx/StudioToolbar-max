@@ -176,6 +176,11 @@ pick["text"] = "Show Textures"; mgr2._open_tools_menu(); pick["text"] = None
 check("Show Textures in TOOLS menu", ran and ran[-1] == stm.PATH_TEXTURES)
 pick["text"] = "Show Textures"; mgr2._toolbar_context_menu(QtCore.QPoint(5, 5)); pick["text"] = None
 check("Show Textures in right-click menu", len(ran) == 2 and ran[-1] == stm.PATH_TEXTURES)
+pick["text"] = "Bake Camera"; mgr2._open_tools_menu(); pick["text"] = None
+check("Bake Camera in TOOLS menu", ran[-1] == stm.PATH_BAKE_CAM)
+pick["text"] = "Bake Camera"; mgr2._toolbar_context_menu(QtCore.QPoint(5, 5)); pick["text"] = None
+check("Bake Camera in right-click menu", len(ran) == 4 and ran[-1] == stm.PATH_BAKE_CAM)
+check("Bake Camera off the bar", not hasattr(mgr2, "btn_bake_cam"))
 mgr2.btn_lookdev.click()
 check("Lookdev button runs STM_LookdevRig.py", ran[-1] == stm.PATH_LOOKDEV and ran[-1].endswith("STM_LookdevRig.py"))
 check("Lookdev launcher exists in maintools",

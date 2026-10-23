@@ -26,7 +26,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.8.0"
+VERSION = "2.8.1"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -1263,9 +1263,8 @@ class StudioToolbar(QtWidgets.QWidget):
         self.btn_overscan  = IconToolButton(_svg_overscan,  accent_color=IC_ACCENT)
         self.btn_img_plane = IconToolButton(_svg_imgplane,  accent_color=IC_ACCENT2)
         self.btn_rem_back  = IconToolButton(_svg_remback,   accent_color=IC_ACCENT)
-        # Show Textures lives in the TOOLS ▾ menu and the right-click menu (not on the bar)
+        # Show Textures and Bake Camera live in the TOOLS ▾ menu and the right-click menu (not on the bar)
         self.btn_paste_cam = IconToolButton(_svg_pastecam, base_color=MX_TEXT, accent_color=IC_ACCENT)
-        self.btn_bake_cam  = IconToolButton(_svg_bakecam,   accent_color=IC_ACCENT)
         self.btn_lookdev   = IconToolButton(_svg_lookdev,   accent_color=IC_ACCENT)
         self.btn_library   = LibraryIconButton()
 
@@ -1273,12 +1272,11 @@ class StudioToolbar(QtWidgets.QWidget):
         self.btn_img_plane.setToolTip("Image Plane\nCreates a reference image plane inside the active viewport")
         self.btn_rem_back.setToolTip("Remove Background\nRemoves/hides the environment background from the scene")
         self.btn_paste_cam.setToolTip("Paste Cam: creates the camera copied from 3D Camera Pin")
-        self.btn_bake_cam.setToolTip("Bake Camera\nSelect an Alembic camera — bakes its transform and FOV into a native Free Camera")
         self.btn_lookdev.setToolTip("Lookdev Rig\nSelect an asset — builds camera, chrome/grey balls, colour chart and HDRI dome (turntable)")
         self.btn_library.setToolTip("Studio Library MAX\nOpens the pose/animation library manager")
 
         for b in [self.btn_overscan, self.btn_img_plane, self.btn_rem_back,
-                  self.btn_paste_cam, self.btn_bake_cam, self.btn_lookdev]:
+                  self.btn_paste_cam, self.btn_lookdev]:
             L.addWidget(b)
             L.addSpacing(3)
         L.addSpacing(4)
@@ -1553,7 +1551,6 @@ class StudioToolbar(QtWidgets.QWidget):
         # Right-click on the toolbar background: extra tools (Show Textures…)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._toolbar_context_menu)
-        self.btn_bake_cam.clicked.connect(lambda: self._run_smart_script(PATH_BAKE_CAM))
         self.btn_lookdev.clicked.connect(lambda: self._run_smart_script(PATH_LOOKDEV))
         self.btn_library.clicked.connect(lambda: self._run_smart_script(PATH_LIBRARY))
         self.btn_snap.clicked.connect(self._capture_viewport)
@@ -1689,6 +1686,9 @@ class StudioToolbar(QtWidgets.QWidget):
         act = menu.addAction("Show Textures (toggle)")
         act.setToolTip("Toggles texture display for every material in the viewport")
         act.triggered.connect(lambda: self._run_smart_script(PATH_TEXTURES))
+        act = menu.addAction("Bake Camera")
+        act.setToolTip("Select an Alembic camera — bakes its transform and FOV into a native Free Camera")
+        act.triggered.connect(lambda: self._run_smart_script(PATH_BAKE_CAM))
         menu.addSeparator()
 
         if not os.path.isdir(tools_dir):
@@ -1710,6 +1710,8 @@ class StudioToolbar(QtWidgets.QWidget):
         m = QtWidgets.QMenu(self)
         a = m.addAction("Show Textures (toggle)")
         a.triggered.connect(lambda: self._run_smart_script(PATH_TEXTURES))
+        a = m.addAction("Bake Camera")
+        a.triggered.connect(lambda: self._run_smart_script(PATH_BAKE_CAM))
         m.addSeparator()
         a = m.addAction("Pipeline Setup…")
         a.triggered.connect(self._open_setup)

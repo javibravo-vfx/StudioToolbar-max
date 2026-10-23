@@ -1,5 +1,9 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.1
+- **Bake Camera** moved off the bar: now in **TOOLS ▾** (under Show Textures) and in the right-click menu — its slot is used by Lookdev Rig, so the toolbar keeps the v2.7.0 width
+- `dev/test_features.py`: Bake Camera menu checks
+
 ## v2.8.0
 - **New: Lookdev Rig** (TOOLS section, after Bake Camera) — select an asset and build a lookdev / turntable setup around it
   - Camera framed automatically from the asset's bounding sphere (works for any size; uses render aspect)

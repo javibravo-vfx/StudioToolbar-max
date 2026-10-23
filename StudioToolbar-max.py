@@ -21,11 +21,12 @@ FILES WRITTEN TO  ~/.studio-toolbar/
 import os, json, re
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6 import QtSvg
+import pymxs
 from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.6.6"
+VERSION = "2.7.0"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -538,6 +539,16 @@ def _svg_textures(base, accent):
   <rect x="12" y="12" width="11" height="11" fill="{base}"   opacity="0.70"/>
   <rect x="12" y="1"  width="11" height="11" fill="{accent}" opacity="0.35"/>
   <rect x="1"  y="12" width="11" height="11" fill="{accent}" opacity="0.35"/>
+</svg>"""
+
+def _svg_pastecam(base, accent):
+    """Paste Cam — camera body with a down arrow (import / paste from Camera Pin)."""
+    return f"""<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1.5" y="10" width="14" height="10.5" rx="1.2" fill="none" stroke="{base}" stroke-width="1.4"/>
+  <polyline points="15.5,13 22.5,10 22.5,20.5 15.5,17.5" fill="none" stroke="{base}" stroke-width="1.3" stroke-linejoin="round"/>
+  <circle cx="7" cy="15.3" r="2.4" fill="none" stroke="{base}" stroke-width="1.2"/>
+  <line x1="8.5" y1="0.8" x2="8.5" y2="7.2" stroke="{accent}" stroke-width="1.6" stroke-linecap="round"/>
+  <polyline points="5.6,4.6 8.5,7.6 11.4,4.6" fill="none" stroke="{accent}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>"""
 
 def _svg_bakecam(base, accent):
@@ -1238,19 +1249,20 @@ class StudioToolbar(QtWidgets.QWidget):
         self.btn_overscan  = IconToolButton(_svg_overscan,  accent_color=IC_ACCENT)
         self.btn_img_plane = IconToolButton(_svg_imgplane,  accent_color=IC_ACCENT2)
         self.btn_rem_back  = IconToolButton(_svg_remback,   accent_color=IC_ACCENT)
-        self.btn_textures  = IconToolButton(_svg_textures,  accent_color=IC_ACCENT)
+        # Show Textures lives in the TOOLS ▾ menu and the right-click menu (not on the bar)
+        self.btn_paste_cam = IconToolButton(_svg_pastecam, base_color=MX_TEXT, accent_color=IC_ACCENT)
         self.btn_bake_cam  = IconToolButton(_svg_bakecam,   accent_color=IC_ACCENT)
         self.btn_library   = LibraryIconButton()
 
         self.btn_overscan.setToolTip("Overscan\nAdjusts camera overscan — adds bleed area outside the render frame")
         self.btn_img_plane.setToolTip("Image Plane\nCreates a reference image plane inside the active viewport")
         self.btn_rem_back.setToolTip("Remove Background\nRemoves/hides the environment background from the scene")
-        self.btn_textures.setToolTip("Show Textures\nToggles texture display in the viewport (on/off)")
+        self.btn_paste_cam.setToolTip("Paste Cam: creates the camera copied from 3D Camera Pin")
         self.btn_bake_cam.setToolTip("Bake Camera\nSelect an Alembic camera — bakes its transform and FOV into a native Free Camera")
         self.btn_library.setToolTip("Studio Library MAX\nOpens the pose/animation library manager")
 
         for b in [self.btn_overscan, self.btn_img_plane, self.btn_rem_back,
-                  self.btn_textures, self.btn_bake_cam]:
+                  self.btn_paste_cam, self.btn_bake_cam]:
             L.addWidget(b)
             L.addSpacing(3)
         L.addSpacing(4)
@@ -1521,7 +1533,10 @@ class StudioToolbar(QtWidgets.QWidget):
         self.btn_overscan.clicked.connect(lambda: self._run_smart_script(PATH_OVERSCAN))
         self.btn_img_plane.clicked.connect(lambda: self._run_smart_script(PATH_IMAGE_PLANE))
         self.btn_rem_back.clicked.connect(lambda: self._run_smart_script(PATH_REMOVE_BACK))
-        self.btn_textures.clicked.connect(lambda: self._run_smart_script(PATH_TEXTURES))
+        self.btn_paste_cam.clicked.connect(self._paste_camera_pin)
+        # Right-click on the toolbar background: extra tools (Show Textures…)
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._toolbar_context_menu)
         self.btn_bake_cam.clicked.connect(lambda: self._run_smart_script(PATH_BAKE_CAM))
         self.btn_library.clicked.connect(lambda: self._run_smart_script(PATH_LIBRARY))
         self.btn_snap.clicked.connect(self._capture_viewport)
@@ -1654,6 +1669,11 @@ class StudioToolbar(QtWidgets.QWidget):
             QMenu::separator {{ height: 1px; background: #444; margin: 2px 0; }}
         """)
 
+        act = menu.addAction("Show Textures (toggle)")
+        act.setToolTip("Toggles texture display for every material in the viewport")
+        act.triggered.connect(lambda: self._run_smart_script(PATH_TEXTURES))
+        menu.addSeparator()
+
         if not os.path.isdir(tools_dir):
             menu.addAction(f"Folder not found: {tools_dir}").setEnabled(False)
         else:
@@ -1667,6 +1687,47 @@ class StudioToolbar(QtWidgets.QWidget):
         # Open the menu right below the button
         menu.exec(self.btn_tools_menu.mapToGlobal(
             QtCore.QPoint(0, self.btn_tools_menu.height())))
+
+    # ── right-click menu on the toolbar ─────────────────────────────────────
+    def _toolbar_context_menu(self, pos):
+        m = QtWidgets.QMenu(self)
+        a = m.addAction("Show Textures (toggle)")
+        a.triggered.connect(lambda: self._run_smart_script(PATH_TEXTURES))
+        m.addSeparator()
+        a = m.addAction("Pipeline Setup…")
+        a.triggered.connect(self._open_setup)
+        m.exec(self.mapToGlobal(pos))
+
+    # ── Paste Cam (3D Camera Pin) ────────────────────────────────────────────
+    CAMERA_PIN_TAG = "Camera Pin"
+
+    def _paste_camera_pin(self):
+        """Creates the camera copied with 3D Camera Pin's Copy button (a MAXScript in the clipboard)."""
+        text = QtWidgets.QApplication.clipboard().text() or ""
+        if not text.strip() or self.CAMERA_PIN_TAG not in text:
+            QtWidgets.QMessageBox.warning(self, "Paste Cam",
+                                          "There is no Camera Pin camera in the clipboard.")
+            return
+        try:
+            with pymxs.undo(True, "Paste Camera Pin"):
+                result = rt.execute(text)
+        except Exception as e:
+            self._set_status("Paste Cam error", "#e06060", str(e))
+            QtWidgets.QMessageBox.critical(self, "Paste Cam",
+                                           f"The Camera Pin script failed:\n\n{e}")
+            return
+        name = ""
+        try:
+            if result is not None:
+                name = str(result.name)
+        except Exception:
+            name = ""
+        rt.redrawViews()
+        if name:
+            short = name if len(name) <= 16 else name[:15] + "…"   # full name in tooltip/history
+            self._set_status(f"Camera pasted: {short}", "#70aa70", f"Camera pasted: {name}")
+        else:
+            self._set_status("Camera pasted", "#70aa70")
 
     # ── current selection / pipeline paths ───────────────────────────────────
     def _sel(self):

@@ -136,4 +136,45 @@ check("tools menu opens", len(captured.get("items", [])) > 0)
 dock.close(); app.processEvents()
 check("dock close OK", True)
 
+# 14 — Paste Cam (3D Camera Pin) + Show Textures moved off the bar
+class _Box(QtWidgets.QMessageBox):
+    LOG = []
+    @staticmethod
+    def warning(*a, **k): _Box.LOG.append(("warning", a[2] if len(a) > 2 else "")); return 0
+    @staticmethod
+    def critical(*a, **k): _Box.LOG.append(("critical", a[2] if len(a) > 2 else "")); return 0
+QtWidgets.QMessageBox = _Box
+mgr2 = stm.StudioToolbar(parent=MAIN)
+clip = QtWidgets.QApplication.clipboard()
+executed = []
+class _Cam: name = "CAM_plate_0042"
+rt.execute = lambda code: (executed.append(code), _Cam())[1]
+clip.setText("")
+mgr2._paste_camera_pin()
+check("paste cam: empty clipboard → warning, nothing executed", _Box.LOG[-1][0] == "warning" and not executed)
+clip.setText("box pos:[0,0,0]")
+mgr2._paste_camera_pin()
+check("paste cam: non Camera Pin text → warning, nothing executed", _Box.LOG[-1][0] == "warning" and not executed)
+SCRIPT = "-- Camera Pin · plate.exr 1920x1080 · f=35mm\nc = Physcam name:\"CAM_plate_0042\"\nc"
+clip.setText(SCRIPT)
+pymxs.UNDO_LABELS.clear()
+mgr2._paste_camera_pin()
+check("paste cam: executes clipboard script", executed == [SCRIPT])
+check("paste cam: wrapped in one undo", pymxs.UNDO_LABELS == ["Paste Camera Pin"], str(pymxs.UNDO_LABELS))
+check("paste cam: status shows camera name", "Camera pasted" in mgr2.status_lbl.text() and "CAM_plate" in mgr2.status_lbl.text(),
+      mgr2.status_lbl.text())
+check("paste cam: full name in history", any("CAM_plate_0042" in e[3] for e in mgr2._status_log))
+def _boom(code): raise RuntimeError("-- Syntax error: at bad")
+rt.execute = _boom
+mgr2._paste_camera_pin()
+check("paste cam: script error → critical dialog + red status", _Box.LOG[-1][0] == "critical" and "error" in mgr2.status_lbl.text().lower())
+check("paste cam: button on the bar, textures button gone",
+      hasattr(mgr2, "btn_paste_cam") and not hasattr(mgr2, "btn_textures"))
+ran = []
+mgr2._run_smart_script = lambda p: ran.append(p)
+pick["text"] = "Show Textures"; mgr2._open_tools_menu(); pick["text"] = None
+check("Show Textures in TOOLS menu", ran and ran[-1] == stm.PATH_TEXTURES)
+pick["text"] = "Show Textures"; mgr2._toolbar_context_menu(QtCore.QPoint(5, 5)); pick["text"] = None
+check("Show Textures in right-click menu", len(ran) == 2 and ran[-1] == stm.PATH_TEXTURES)
+
 print("\n%d failures" % len(fails), fails)

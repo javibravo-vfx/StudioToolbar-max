@@ -1,5 +1,13 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.7.0
+- **New: Paste Cam** (TOOLS section) — creates the camera copied with the Copy button of 3D Camera Pin
+  - Reads the clipboard; if it is empty or doesn't contain "Camera Pin", warns and runs nothing
+  - Runs the MAXScript inside one Undo record ("Paste Camera Pin" — Ctrl+Z removes the camera)
+  - Status shows `Camera pasted: <name>` (full name in the tooltip / history); script errors open a dialog
+- **Show Textures** moved off the bar (rarely used): now in **TOOLS ▾** (top item) and in the new right-click menu on the toolbar background (which also opens Pipeline Setup)
+- Toolbar width unchanged
+
 ## v2.6.6 — StudioLibrary MAX 2.1.1
 - StudioLibrary remembers window position/size, last folder and last pose, and reopens exactly there (re-centred if that monitor is gone)
 - Opening StudioLibrary again brings the open window to the front instead of creating a second window

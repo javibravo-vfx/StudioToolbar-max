@@ -60,7 +60,15 @@ class Runtime(Any):
     def classOf(self, x): return "Default_Scanline_Renderer"
 
 rt = Runtime()
+import contextlib
 pymxs = types.ModuleType("pymxs"); pymxs.runtime = rt; sys.modules["pymxs"] = pymxs
+pymxs.UNDO_LABELS = []
+@contextlib.contextmanager
+def _undo(on, label=""):
+    pymxs.UNDO_LABELS.append(label); yield
+pymxs.undo = _undo
+pymxs.animate = lambda *a: contextlib.nullcontext()
+pymxs.attime = lambda *a: contextlib.nullcontext()
 
 from PySide6 import QtWidgets, QtCore, QtGui
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])

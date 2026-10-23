@@ -29,7 +29,7 @@ LEFT = [
     (129,  "Overscan",       "Add bleed outside frame",           "b", 0),
     (173,  "Image Plane",    "Camera reference image",            "t", 0),
     (218,  "Remove BG",      "Clear viewport backgrounds",        "b", 0),
-    (263,  "Show Textures",  "Toggle maps in viewport",           "t", 0),
+    (263,  "Paste Cam",      "Camera from 3D Camera Pin",         "t", 0),
     (308,  "Bake Camera",    "Alembic cam → Max camera",          "b", 0),
     (357,  "Studio Library", "Pose / animation library",          "t", 0),
     (600,  "Render size",    "Width × height, synced live",       "b", 1),

@@ -120,6 +120,8 @@ rt.ai_shadow_matte = _mtl_class("ai_shadow_matte", ("shadow_opacity",))
 rt.LKD_ClayStoreCA = "LKD_ClayStoreCA"
 
 rt.renderWidth, rt.renderHeight, rt.renderPixelAspect = 1920, 1080, 1.0
+rt.backgroundColor = Color(10, 20, 30)
+rt.useEnvironmentMap = True
 rt.selection = []
 rt.objects = SCENE
 VIEW = {"cam": None}
@@ -314,6 +316,63 @@ check("save default: sidecar rotation + intensity, other fields kept",
 check("save default: EV folded (light unchanged)", builder.hdri_state()["exposure"] == 0
       and abs(dome.multiplier - 0.25) < 1e-9)
 builder.set_hdri("studio_a")
+
+# 1c. references: toggle, corner, chart swap — live, rig kept
+cam = rt.getNodeByName("LKD_cam")
+root_before = rt.getNodeByName("LKD_root")
+
+
+def _cam_local(n):
+    """Position of n in camera space (x right, y up)."""
+    d = [n.transform.row4.x - cam.transform.row4.x, n.transform.row4.y - cam.transform.row4.y,
+         n.transform.row4.z - cam.transform.row4.z]
+    ax = cam.transform.row1; ay = cam.transform.row2
+    return (d[0] * ax.x + d[1] * ax.y + d[2] * ax.z, d[0] * ay.x + d[1] * ay.y + d[2] * ay.z)
+
+
+chrome_x0 = _cam_local(rt.getNodeByName("LKD_chrome"))[0]
+r = builder.update_refs(items=["chrome", "colorchecker"])
+check("refs: grey removed, rest of the rig kept",
+      rt.getNodeByName("LKD_grey18") is UNDEF and rt.getNodeByName("LKD_root") is root_before
+      and rt.getNodeByName("LKD_chart_board") is not UNDEF)
+check("refs: chart packs into the freed slot",
+      _cam_local(rt.getNodeByName("LKD_chart_board"))[0] > 0
+      and abs(_cam_local(rt.getNodeByName("LKD_chrome"))[0] - chrome_x0) < 1e-6)
+builder.update_refs(corner="top_left")
+cx, cy = _cam_local(rt.getNodeByName("LKD_chrome"))
+check("refs: top-left corner", cx < 0 and cy > 0, (cx, cy))
+check("refs: state remembered", builder.refs_state() == {"items": ["chrome", "colorchecker"],
+                                                         "corner": "top_left",
+                                                         "chart": "colorchecker24"})
+shutil.copy(os.path.join(os.environ["STUDIO_LOOKDEV_DIR"], "reference", "_TEMPLATE_chart.json"),
+            os.path.join(os.environ["STUDIO_LOOKDEV_DIR"], "reference", "test_chart6.json"))
+check("charts: listed from reference/", "test_chart6" in core.list_charts()
+      and "_TEMPLATE_chart" not in core.list_charts())
+builder.update_refs(chart="test_chart6")
+patches = [n for n in SCENE if n.name.startswith("LKD_chart_") and n.name != "LKD_chart_board"]
+board = rt.getNodeByName("LKD_chart_board")
+check("charts: swap to a 3x2 chart (6 patches, 1.5:1 board)", len(patches) == 6
+      and abs(board.width / board.length - 1.5) < 1e-6, (len(patches), board.width / board.length))
+builder.update_refs(items=[], corner="bottom_right", chart="colorchecker24")
+check("refs: all off", not any(n.name in ("LKD_chrome", "LKD_grey18", "LKD_chart_board") for n in SCENE))
+builder.update_refs(items=["chrome", "grey18", "colorchecker"])
+check("refs: all back (24 patches)", sum(1 for n in SCENE if n.name.startswith("LKD_chart_")) == 25)
+
+# 1d. background colour when the dome is hidden
+builder.set_background_visible(False, color=(0.5, 0.25, 0.0))
+check("bg colour: scene background set, env map off",
+      abs(rt.backgroundColor.r - 127.5) < 1e-6 and rt.useEnvironmentMap is False)
+builder.set_background_color((0.0, 0.0, 1.0))
+check("bg colour: live change while hidden", rt.backgroundColor.b == 255.0)
+builder.set_background_visible(True)
+check("bg colour: scene background restored when the dome is visible again",
+      rt.backgroundColor.r == 10 and rt.useEnvironmentMap is True)
+builder.set_background_visible(False)
+builder.remove_rig()
+check("bg colour: delete rig restores the scene background",
+      rt.backgroundColor.b == 30 and rt.useEnvironmentMap is True)
+rig = builder.build("studio_a")
+dome = rt.getNodeByName("LKD_dome")
 
 # 2. clay
 n = builder.set_clay(True)

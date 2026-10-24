@@ -29,6 +29,7 @@ The asset is never modified, except:
     and put back when clay is turned off or the rig is deleted.
 """
 
+import json
 import math
 import os
 import sys
@@ -58,6 +59,12 @@ UP_ROT = "lookdev_rotation"            # absolute HDRI rotation, degrees
 UP_EV = "lookdev_exposure"             # EV on top of the base intensity
 UP_BASE = "lookdev_base_intensity"     # sidecar intensity * preset light intensity
 UP_BG = "lookdev_bg_visible"
+UP_BG_COLOR = "lookdev_bg_color"       # linear r,g,b used when the dome is hidden
+UP_PREV_ENV = "lookdev_prev_env"       # scene background before the rig changed it
+UP_REFS = "lookdev_refs"               # JSON: items / corner / chart currently built
+UP_DIST = "lookdev_distance"           # lens -> asset distance (keeps ref size on rebuild)
+UP_RADIUS = "lookdev_radius"
+REF_NAMES = (P + "chrome", P + "grey18", P + "chart_board")
 
 # Custom attribute on LKD_store. Lives in the .max file, so a scene saved with clay on
 # can still restore the original materials in a later session.
@@ -149,6 +156,7 @@ def _store():
 def remove_rig():
     """Puts the asset materials back (if clay is on) and deletes every LKD_ node."""
     set_clay(False)
+    _restore_environment()
     for n in rig_nodes():
         if rt.isValidNode(n):
             rt.delete(n)
@@ -308,10 +316,17 @@ def set_exposure(ev):
     rt.setUserProp(st, UP_EV, float(ev))
 
 
-def set_background_visible(visible):
+def set_background_visible(visible, color=None):
+    """Dome visible to camera, or hidden with a flat background colour (linear rgb)."""
     st, dome = _require_rig()
     adapters.detect().set_dome_background(dome, bool(visible))
     rt.setUserProp(st, UP_BG, 1 if visible else 0)
+    if color is not None:
+        rt.setUserProp(st, UP_BG_COLOR, ",".join("%.6f" % v for v in color[:3]))
+    if visible:
+        _restore_environment()
+    else:
+        _apply_background_color(st, background_color())
 
 
 def set_hdri(hdri, keep_adjustments=False):
@@ -404,6 +419,187 @@ def set_clay(on, albedo=None):
 # Build
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# References (balls + chart)
+# ---------------------------------------------------------------------------
+
+def _refs_settings(preset):
+    r = preset["refs"]
+    return {"items": [i for i in r.get("items", []) if i in core.REF_ITEMS],
+            "corner": r.get("corner", "bottom_right"),
+            "chart": r.get("chart", core.DEFAULT_CHART)}
+
+
+def _build_refs(adapter, frame, preset, cam, keep):
+    """Creates the enabled references in the chosen corner, packed from the corner inwards."""
+    ws = preset["working_space"]
+    r = preset["refs"]
+    cast_shadows = bool(r.get("cast_shadows", False))
+    chart = None
+    if "colorchecker" in r.get("items", []):
+        chart = core.load_chart(r.get("chart") or core.DEFAULT_CHART, ws)
+    aspect = (chart["cols"] / float(chart["rows"])) if chart else 1.5
+    layout = core.reference_layout(frame, preset, chart_aspect=aspect)
+    nodes = []
+    mtl_chrome = mtl_grey = None
+    for item in layout:
+        kind, cpos = item["kind"], item["pos"]
+        if kind in core.BALL_KINDS:
+            if kind == "chrome":
+                mtl_chrome = mtl_chrome or adapter.mtl_chrome(P + "mtl_chrome")
+            else:
+                mtl_grey = mtl_grey or adapter.mtl_flat(P + "mtl_grey18", core.grey18(ws))
+            ball = keep(rt.Sphere())
+            ball.name = P + kind
+            ball.radius = item["radius"]
+            ball.segs = 64
+            ball.transform = _cam_matrix(frame, frame.to_world(cpos))
+            ball.material = mtl_chrome if kind == "chrome" else mtl_grey
+            adapter.setup_ref_node(ball, cast_shadows)
+            ball.parent = cam
+            nodes.append(ball)
+        elif kind == "colorchecker" and chart:
+            w, h = item["size"]
+            lay = core.colorchecker_layout(w, h, rows=chart["rows"], cols=chart["cols"])
+            board = keep(rt.Plane())
+            board.name = P + "chart_board"
+            board.width, board.length = w, h
+            board.widthsegs = board.lengthsegs = 1
+            board.transform = _cam_matrix(frame, frame.to_world(cpos))
+            board.material = adapter.mtl_flat(P + "mtl_chart_board", (0.03, 0.03, 0.03))
+            adapter.setup_ref_node(board, cast_shadows)
+            rt.setUserProp(board, "lookdev_chart", chart["id"])
+            eps = h * 0.003                       # patches just in front of the board
+            for p in chart["patches"]:
+                cell = lay["cells"].get((p["row"], p["col"]))
+                if cell is None:
+                    continue
+                ppos = frame.to_world((cpos[0] + cell[0], cpos[1] + cell[1], cpos[2] + eps))
+                patch = keep(rt.Plane())
+                patch.name = "%schart_%02d_%s" % (P, p["id"], p["name"])
+                patch.width = patch.length = lay["patch"]
+                patch.widthsegs = patch.lengthsegs = 1
+                patch.transform = _cam_matrix(frame, ppos)
+                patch.material = adapter.mtl_flat(P + "mtl_cc_" + p["name"], p["rgb"])
+                adapter.setup_ref_node(patch, cast_shadows)
+                patch.parent = board
+            board.parent = cam
+            nodes.append(board)
+    return nodes
+
+
+def refs_state():
+    """{items, corner, chart} of the built rig, or None."""
+    st = _store()
+    if st is None:
+        return None
+    raw = rt.getUserProp(st, UP_REFS)
+    try:
+        return json.loads(str(raw)) if not is_undefined(raw) else None
+    except ValueError:
+        return None
+
+
+def update_refs(items=None, corner=None, chart=None):
+    """
+    Rebuilds only the balls / chart on the existing rig (no full rebuild): toggle each
+    reference, move them to another corner or swap the chart. Missing items are packed
+    towards the corner automatically.
+    """
+    st, _dome = _require_rig()
+    cam = _node(P + "cam")
+    if cam is None:
+        raise RuntimeError("Rig camera missing — rebuild the rig.")
+    pname = rt.getUserProp(st, core.USER_PROP_PRESET)
+    preset = core.load_preset("turntable_default" if is_undefined(pname) else str(pname))
+    cur = refs_state() or _refs_settings(preset)
+    if items is not None:
+        cur["items"] = [i for i in core.REF_ITEMS if i in items]   # canonical order
+    if corner is not None:
+        cur["corner"] = corner
+    if chart is not None:
+        cur["chart"] = chart
+    preset = core.merge(preset, {"refs": cur})
+
+    # frame from the camera as it is now (refs are placed in camera space, so the current
+    # turntable frame does not matter)
+    tm = cam.transform
+    hfov = math.radians(float(cam.fov))
+    frame = core.CameraFrame(_v3(tm.row4), core._norm(_v3(tm.row1)), core._norm(_v3(tm.row2)),
+                             core._norm(_v3(tm.row3)), _v3(tm.row4),
+                             _prop_float(st, UP_DIST, 100.0), hfov,
+                             core.vfov_from_hfov(hfov, _render_aspect()),
+                             _prop_float(st, UP_RADIUS, 10.0))
+    adapter = adapters.detect()
+    with pymxs.undo(True, "Lookdev references"):
+        for n in rig_nodes():
+            name = str(n.name)
+            if rt.isValidNode(n) and (name in REF_NAMES or name.startswith(P + "chart_")):
+                rt.delete(n)
+        lyr = _layer()
+
+        def keep(node):
+            lyr.addNode(node)
+            return node
+
+        nodes = _build_refs(adapter, frame, preset, cam, keep)
+        rt.setUserProp(st, UP_REFS, json.dumps(cur))
+    rt.redrawViews()
+    return {"refs": nodes, "settings": cur, "log": list(adapter.log)}
+
+
+# ---------------------------------------------------------------------------
+# Background colour when the dome is hidden
+# ---------------------------------------------------------------------------
+
+def _restore_environment():
+    st = _store()
+    if st is None:
+        return
+    raw = rt.getUserProp(st, UP_PREV_ENV)
+    if is_undefined(raw) or not str(raw):
+        return
+    try:
+        prev = json.loads(str(raw))
+        rt.backgroundColor = rt.Color(*prev["color"])
+        rt.useEnvironmentMap = bool(prev["use_map"])
+    except Exception:  # noqa: BLE001
+        pass
+    rt.setUserProp(st, UP_PREV_ENV, "")
+
+
+def _apply_background_color(st, rgb):
+    raw = rt.getUserProp(st, UP_PREV_ENV)
+    if is_undefined(raw) or not str(raw):          # remember the scene setting once
+        c = rt.backgroundColor
+        rt.setUserProp(st, UP_PREV_ENV, json.dumps(
+            {"color": [float(c.r), float(c.g), float(c.b)],
+             "use_map": bool(rt.useEnvironmentMap)}))
+    rt.backgroundColor = rt.Color(rgb[0] * 255.0, rgb[1] * 255.0, rgb[2] * 255.0)
+    rt.useEnvironmentMap = False                  # an environment map would cover the colour
+
+
+def background_color():
+    """Linear rgb used behind the asset when the dome is hidden."""
+    st = _store()
+    default = (0.18, 0.18, 0.18)
+    if st is None:
+        return default
+    raw = rt.getUserProp(st, UP_BG_COLOR)
+    try:
+        return tuple(float(v) for v in str(raw).split(","))[:3] if not is_undefined(raw) else default
+    except ValueError:
+        return default
+
+
+def set_background_color(rgb):
+    """Colour (linear, working space) seen in the render when the dome is hidden."""
+    st, _dome = _require_rig()
+    rt.setUserProp(st, UP_BG_COLOR, ",".join("%.6f" % v for v in rgb[:3]))
+    if not hdri_state()["bg_visible"]:
+        _apply_background_color(st, rgb)
+
+
 def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
           overrides=None):
     """
@@ -433,7 +629,6 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
         frame = _frame_from_camera(user_cam, bmin, bmax, aspect)
     else:
         frame = core.camera_frame(bmin, bmax, preset, aspect, up_axis=UP_AXIS)
-    layout = core.reference_layout(frame, preset)
     cast_shadows = bool(preset["refs"].get("cast_shadows", False))
 
     rig = {"adapter": adapter.name, "hdri": hdri.name, "preset": preset["_name"],
@@ -504,51 +699,11 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
                 ground.parent = root
                 rig["ground"] = ground
 
-        # Shared materials
-        mtl_chrome = adapter.mtl_chrome(P + "mtl_chrome")
-        mtl_grey = adapter.mtl_flat(P + "mtl_grey18", core.grey18(ws))
-        mtl_board = adapter.mtl_flat(P + "mtl_chart_board", (0.03, 0.03, 0.03))
-
-        # References
-        for item in layout:
-            kind = item["kind"]
-            cpos = item["pos"]
-            if kind in core.BALL_KINDS:
-                ball = keep(rt.Sphere())
-                ball.name = P + kind
-                ball.radius = item["radius"]
-                ball.segs = 64
-                ball.transform = _cam_matrix(frame, frame.to_world(cpos))
-                ball.material = mtl_chrome if kind == "chrome" else mtl_grey
-                adapter.setup_ref_node(ball, cast_shadows)
-                ball.parent = cam
-                rig["refs"].append(ball)
-
-            elif kind == "colorchecker":
-                w, h = item["size"]
-                lay = core.colorchecker_layout(w, h)
-                board = keep(rt.Plane())
-                board.name = P + "chart_board"
-                board.width, board.length = w, h
-                board.widthsegs = board.lengthsegs = 1
-                board.transform = _cam_matrix(frame, frame.to_world(cpos))
-                board.material = mtl_board
-                adapter.setup_ref_node(board, cast_shadows)
-
-                eps = h * 0.003                       # patches just in front of the board
-                for p in core.colorchecker_patches(ws):
-                    cx, cy = lay["cells"][(p["row"], p["col"])]
-                    ppos = frame.to_world((cpos[0] + cx, cpos[1] + cy, cpos[2] + eps))
-                    patch = keep(rt.Plane())
-                    patch.name = "%schart_%02d_%s" % (P, p["id"], p["name"])
-                    patch.width = patch.length = lay["patch"]
-                    patch.widthsegs = patch.lengthsegs = 1
-                    patch.transform = _cam_matrix(frame, ppos)
-                    patch.material = adapter.mtl_flat(P + "mtl_cc_" + p["name"], p["rgb"])
-                    adapter.setup_ref_node(patch, cast_shadows)
-                    patch.parent = board
-                board.parent = cam
-                rig["refs"].append(board)
+        # References (balls + chart), parented to the camera
+        rt.setUserProp(store, UP_DIST, frame.distance)
+        rt.setUserProp(store, UP_RADIUS, frame.radius)
+        rig["refs"] = _build_refs(adapter, frame, preset, cam, keep)
+        rt.setUserProp(store, UP_REFS, json.dumps(_refs_settings(preset)))
 
         # HDRI rotation + turntable
         _set_z_rotation(dome.name, hdri.rotation_offset)

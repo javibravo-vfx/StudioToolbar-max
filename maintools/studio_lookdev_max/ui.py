@@ -122,6 +122,25 @@ QToolTip {{ background-color: #2a2a2a; color: {text}; border: 1px solid {border}
            status=C_STATUS, accent=C_ACCENT, accentbg=C_ACCENT_BG, err=C_ERR)
 
 FILTER_ALL, FILTER_MISSING, FILTER_TAG = "all", "missing", "tag:"
+CORNER_LABELS = (("bottom_right", "Bottom right"), ("bottom_left", "Bottom left"),
+                 ("top_right", "Top right"), ("top_left", "Top left"))
+
+
+def _srgb_to_lin(v):
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def _lin_to_srgb(v):
+    v = max(0.0, min(1.0, v))
+    return 12.92 * v if v <= 0.0031308 else 1.055 * (v ** (1 / 2.4)) - 0.055
+
+
+def _qcolor_from_linear(rgb):
+    return QtGui.QColor(*[int(round(_lin_to_srgb(c) * 255)) for c in rgb[:3]])
+
+
+def _linear_from_qcolor(qc):
+    return tuple(_srgb_to_lin(c / 255.0) for c in (qc.red(), qc.green(), qc.blue()))
 
 
 # ── settings ─────────────────────────────────────────────────────────────────
@@ -434,6 +453,42 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.lbl_camera.setObjectName("dim")
         self.lbl_camera.setWordWrap(True)
         v.addWidget(self.lbl_camera)
+
+        # references (live on the rig)
+        row = QtWidgets.QHBoxLayout()
+        lbl = QtWidgets.QLabel("Refs")
+        lbl.setFixedWidth(64)
+        row.addWidget(lbl)
+        self.chk_chrome = QtWidgets.QCheckBox("Chrome")
+        self.chk_grey = QtWidgets.QCheckBox("Grey")
+        self.chk_chart = QtWidgets.QCheckBox("Chart")
+        for c in (self.chk_chrome, self.chk_grey, self.chk_chart):
+            c.setChecked(True)
+            c.setToolTip("Toggle this reference — the others pack towards the corner")
+            c.toggled.connect(lambda *_: self.on_refs_changed())
+            row.addWidget(c)
+        row.addStretch(1)
+        v.addLayout(row)
+        row = QtWidgets.QHBoxLayout()
+        lbl = QtWidgets.QLabel("Corner")
+        lbl.setFixedWidth(64)
+        row.addWidget(lbl)
+        self.cmb_corner = QtWidgets.QComboBox()
+        for key, text in CORNER_LABELS:
+            self.cmb_corner.addItem(text, key)
+        self.cmb_corner.currentIndexChanged.connect(lambda *_: self.on_refs_changed())
+        row.addWidget(self.cmb_corner, 1)
+        v.addLayout(row)
+        row = QtWidgets.QHBoxLayout()
+        lbl = QtWidgets.QLabel("Chart")
+        lbl.setFixedWidth(64)
+        row.addWidget(lbl)
+        self.cmb_chart = QtWidgets.QComboBox()
+        self.cmb_chart.setToolTip("Chart definitions in shared\\lookdev\\reference\\ "
+                                  "(see _TEMPLATE_chart.json to add one)")
+        self.cmb_chart.currentIndexChanged.connect(lambda *_: self.on_refs_changed())
+        row.addWidget(self.cmb_chart, 1)
+        v.addLayout(row)
         brow = QtWidgets.QHBoxLayout()
         self.b_build = QtWidgets.QPushButton("Build / update rig")
         self.b_build.setObjectName("primary")
@@ -455,16 +510,29 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.row_ev.setToolTip("Dome intensity in stops over the HDRI default")
         self.row_ev.valueChanged.connect(self.on_exposure)
         self.chk_bg = QtWidgets.QCheckBox("Background visible in render")
-        self.chk_bg.setToolTip("Off: the dome still lights the asset, the render gets alpha")
+        self.chk_bg.setToolTip("Off: the dome still lights the asset and the camera sees the\n"
+                               "colour on the right instead (alpha stays clean for comp)")
         self.chk_bg.toggled.connect(self.on_background)
+        self.b_bg_color = QtWidgets.QToolButton()
+        self.b_bg_color.setFixedSize(40, 20)
+        self.b_bg_color.setToolTip("Background colour when the dome is hidden")
+        self.b_bg_color.clicked.connect(self.on_pick_bg_color)
+        self._bg_color = (0.18, 0.18, 0.18)
+        bg_row = QtWidgets.QHBoxLayout()
+        bg_row.addWidget(self.chk_bg, 1)
+        bg_row.addWidget(self.b_bg_color)
         self.b_save_default = QtWidgets.QPushButton("Save as HDRI default")
         self.b_save_default.setToolTip("Writes rotation and intensity to the HDRI .json sidecar —\n"
                                        "every toolbar (Max, Houdini, Blender, Maya) starts there")
         self.b_save_default.clicked.connect(self.on_save_default)
         self.lbl_live = QtWidgets.QLabel()
         self.lbl_live.setObjectName("dim")
-        for w in (self.row_rot, self.row_ev, self.chk_bg, self.b_save_default, self.lbl_live):
+        v.addWidget(self.row_rot)
+        v.addWidget(self.row_ev)
+        v.addLayout(bg_row)
+        for w in (self.b_save_default, self.lbl_live):
             v.addWidget(w)
+        self._paint_bg_button()
         v.addStretch(1)
         scroll.setWidget(panel)
         return scroll
@@ -520,8 +588,21 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.size_slider.setValue(self._thumb)
         self.size_slider.blockSignals(False)
         self._apply_thumb_size()
+        corner = s.get("corner", "bottom_right")
+        idx = self.cmb_corner.findData(corner)
+        self.cmb_corner.blockSignals(True)
+        self.cmb_corner.setCurrentIndex(max(0, idx))
+        self.cmb_corner.blockSignals(False)
+        try:
+            self._bg_color = tuple(float(x) for x in s["bg_color"].split(","))[:3]
+        except (KeyError, ValueError):
+            pass
+        self._paint_bg_button()
         for chk, key, default in ((self.chk_turntable, "turntable", "1"),
-                                  (self.chk_ground, "ground", "1")):
+                                  (self.chk_ground, "ground", "1"),
+                                  (self.chk_chrome, "chrome", "1"),
+                                  (self.chk_grey, "grey", "1"),
+                                  (self.chk_chart, "chart_on", "1")):
             chk.blockSignals(True)
             chk.setChecked(s.get(key, default) == "1")
             chk.blockSignals(False)
@@ -551,7 +632,13 @@ class LookdevRigDialog(QtWidgets.QDialog):
             return
         save_settings(turntable=int(self.chk_turntable.isChecked()),
                       ground=int(self.chk_ground.isChecked()),
-                      preset=self.cmb_preset.currentText())
+                      preset=self.cmb_preset.currentText(),
+                      chrome=int(self.chk_chrome.isChecked()),
+                      grey=int(self.chk_grey.isChecked()),
+                      chart_on=int(self.chk_chart.isChecked()),
+                      corner=self.cmb_corner.currentData(),
+                      chart=self.cmb_chart.currentData() or "",
+                      bg_color=",".join("%.6f" % c for c in self._bg_color))
 
     def _save_selection(self):
         if self._loading:
@@ -630,6 +717,14 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self.cmb_preset.addItems(names)
             if current in names:
                 self.cmb_preset.setCurrentText(current)
+
+            cur_chart = self.cmb_chart.currentData() or self._settings.get("chart") \
+                or core.DEFAULT_CHART
+            self.cmb_chart.clear()
+            for cid, label in core.list_charts().items():
+                self.cmb_chart.addItem(label, cid)
+            i = self.cmb_chart.findData(cur_chart)
+            self.cmb_chart.setCurrentIndex(max(0, i))
 
             self._hdris = core.list_hdris()
             self._fill_sidebar()
@@ -755,8 +850,26 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self.chk_bg.setChecked(state["bg_visible"])
             self.chk_bg.blockSignals(False)
             self.lbl_live.setText("Acting on the rig  ·  %s" % state["hdri"])
+            self._bg_color = builder.background_color()
+            self._paint_bg_button()
+            refs = builder.refs_state()
+            if refs:
+                for chk, key in ((self.chk_chrome, "chrome"), (self.chk_grey, "grey18"),
+                                 (self.chk_chart, "colorchecker")):
+                    chk.blockSignals(True)
+                    chk.setChecked(key in refs["items"])
+                    chk.blockSignals(False)
+                for cmb, val in ((self.cmb_corner, refs.get("corner")),
+                                 (self.cmb_chart, refs.get("chart"))):
+                    i = cmb.findData(val)
+                    if i >= 0:
+                        cmb.blockSignals(True)
+                        cmb.setCurrentIndex(i)
+                        cmb.blockSignals(False)
         else:
             self.lbl_live.setText("Build the rig to adjust the dome live")
+        self.b_bg_color.setEnabled(not self.chk_bg.isChecked() or not on)
+        self.cmb_chart.setEnabled(self.chk_chart.isChecked())
 
     def _update_camera_label(self):
         _geo, cam = builder._split_selection(list(rt.selection))
@@ -860,6 +973,54 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self._sync_live()
         self._status("Dome → %s" % h.label, C_OK)
 
+    def _refs_values(self):
+        items = [k for chk, k in ((self.chk_chrome, "chrome"), (self.chk_grey, "grey18"),
+                                  (self.chk_chart, "colorchecker")) if chk.isChecked()]
+        return {"items": items, "corner": self.cmb_corner.currentData() or "bottom_right",
+                "chart": self.cmb_chart.currentData() or core.DEFAULT_CHART}
+
+    def on_refs_changed(self):
+        if self._loading:
+            return
+        self.cmb_chart.setEnabled(self.chk_chart.isChecked())
+        self._save_options()
+        if builder.hdri_state() is None:
+            return
+        v = self._refs_values()
+        try:
+            res = builder.update_refs(items=v["items"], corner=v["corner"], chart=v["chart"])
+        except Exception as exc:  # noqa: BLE001
+            self._status("References: %s" % exc, C_ERR)
+            return
+        for line in res["log"]:
+            self._status(line.strip(), C_WARN)
+        names = {"chrome": "chrome", "grey18": "grey", "colorchecker": "chart"}
+        self._status("References: %s  ·  %s" % (
+            ", ".join(names[i] for i in v["items"]) or "none",
+            self.cmb_corner.currentText().lower()), C_OK)
+
+    def _paint_bg_button(self):
+        qc = _qcolor_from_linear(self._bg_color)
+        self.b_bg_color.setStyleSheet(
+            "QToolButton { background-color: %s; border: 1px solid %s; border-radius: 2px; }"
+            "QToolButton:disabled { background-color: #2a2a2a; border-color: #262626; }"
+            % (qc.name(), C_BORDER_HI))
+
+    def on_pick_bg_color(self):
+        qc = QtWidgets.QColorDialog.getColor(_qcolor_from_linear(self._bg_color), self,
+                                             "Background colour")
+        if not qc.isValid():
+            return
+        self._bg_color = _linear_from_qcolor(qc)
+        self._paint_bg_button()
+        self._save_options()
+        if builder.hdri_state() is not None:
+            try:
+                builder.set_background_color(self._bg_color)
+                self._status("Background colour %s" % qc.name(), C_OK)
+            except Exception as exc:  # noqa: BLE001
+                self._status("Background colour: %s" % exc, C_ERR)
+
     def on_rotation(self, value):
         try:
             builder.set_rotation(value)
@@ -874,10 +1035,15 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self._status("Exposure: %s" % exc, C_ERR)
 
     def on_background(self, on):
+        self.b_bg_color.setEnabled(not on)
         try:
-            builder.set_background_visible(on)
+            builder.set_background_visible(on, color=self._bg_color)
         except Exception as exc:  # noqa: BLE001
             self._status("Background: %s" % exc, C_ERR)
+            return
+        if not on:
+            self._status("Dome hidden in render  ·  background %s"
+                         % _qcolor_from_linear(self._bg_color).name(), C_OK)
 
     def on_save_default(self):
         state = builder.hdri_state()
@@ -951,6 +1117,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
             "turntable": {"enabled": self.chk_turntable.isChecked()},
             "ground": {"shadow_catcher": self.chk_ground.isChecked()},
             "clay": {"enabled": self.chk_clay.isChecked()},
+            "refs": self._refs_values(),
         }
         self._update_camera_label()
         try:

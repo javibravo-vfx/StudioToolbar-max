@@ -1,5 +1,12 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.5 — Lookdev Rig 0.5.0
+- **References, live on the rig:** toggle Chrome / Grey / Chart individually (the rest pack towards the corner), pick the corner (bottom right default, bottom left, top right, top left) and the chart — only the references are rebuilt, the rest of the rig stays
+- **Charts are data:** every `*.json` with patches in `shared\lookdev\reference\` shows in the Chart list (every toolbar). Patches can sit anywhere on a rows × cols grid and be given as CIELAB D50 (as X-Rite / Calibrite publish them), 8-bit sRGB or linear. `_TEMPLATE_chart.json` documents the format
+- **Background colour when the dome is hidden:** colour swatch next to "Background visible in render" (default 18% grey). Sets the scene background colour (and turns the environment map off while hidden); the original scene background comes back when the dome is visible again or the rig is deleted
+- Remembers refs, corner, chart and background colour with the other window settings
+- `dev/test_lookdev.py`: 68 checks
+
 ## v2.8.4 — Lookdev Rig 0.4.0
 - **Fix (V-Ray): the dome didn't rotate.** "Lock texture to icon" is now ticked on `LKD_dome` at build; without it the HDRI stays fixed in world space and neither the Rotation slider nor the HDRI turntable did anything. If a V-Ray build names the option differently, the window says so
 - **New layout, Studio Library style** (same palette as StudioLibrary MAX): top bar with search (name / label / tags), renderer badge, Refresh library, Open folder · sidebar with All / Missing preview / tags from the sidecars · thumbnail grid · right panel · status bar

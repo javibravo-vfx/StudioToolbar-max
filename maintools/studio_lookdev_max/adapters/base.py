@@ -153,6 +153,15 @@ class RenderAdapter(object):
     def set_dome_intensity(self, node, value):
         return set_first(node, self.INTENSITY_PROPS, float(value), self.log) is not None
 
+    def create_bg_dome(self, hdri_path, intensity, name):
+        """Second dome seen only by the camera (blurred background); no light, no reflections."""
+        dome = self.create_dome(hdri_path, intensity, name)
+        self.make_camera_only(dome)
+        return dome
+
+    def make_camera_only(self, node):
+        self.log.append("  - %s: camera-only dome not supported" % self.label)
+
     def set_dome_background(self, node, visible):
         """Dome visible to camera (background) or not (alpha for comp)."""
         self.log.append("  - %s: background toggle not supported" % self.label)

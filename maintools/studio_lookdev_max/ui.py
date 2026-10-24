@@ -245,7 +245,7 @@ class _SliderRow(QtWidgets.QWidget):
         lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lbl = QtWidgets.QLabel(label)
-        lbl.setFixedWidth(64)
+        lbl.setFixedWidth(76)
         self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.slider.setRange(int(lo * self._scale), int(hi * self._scale))
         self.spin = QtWidgets.QDoubleSpinBox()
@@ -431,10 +431,13 @@ class LookdevRigDialog(QtWidgets.QDialog):
         v.addWidget(_section("Rig"))
         row = QtWidgets.QHBoxLayout()
         lbl = QtWidgets.QLabel("Preset")
-        lbl.setFixedWidth(64)
+        lbl.setFixedWidth(76)
         row.addWidget(lbl)
         self.cmb_preset = QtWidgets.QComboBox()
-        self.cmb_preset.currentTextChanged.connect(self._on_preset_changed)
+        self.cmb_preset.setToolTip("Rig presets (shared\\lookdev\\presets): camera framing, reference sizes,\n"
+                                   "turntable length / start frame / direction, ground and clay defaults.\n"
+                                   "Applied when the rig is built.")
+        self.cmb_preset.currentIndexChanged.connect(lambda *_: self._on_preset_changed(self._preset_id()))
         row.addWidget(self.cmb_preset, 1)
         v.addLayout(row)
         self.chk_turntable = QtWidgets.QCheckBox("Turntable  (object, then HDRI)")
@@ -457,7 +460,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         # references (live on the rig)
         row = QtWidgets.QHBoxLayout()
         lbl = QtWidgets.QLabel("Refs")
-        lbl.setFixedWidth(64)
+        lbl.setFixedWidth(76)
         row.addWidget(lbl)
         self.chk_chrome = QtWidgets.QCheckBox("Chrome")
         self.chk_grey = QtWidgets.QCheckBox("Grey")
@@ -471,7 +474,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         v.addLayout(row)
         row = QtWidgets.QHBoxLayout()
         lbl = QtWidgets.QLabel("Corner")
-        lbl.setFixedWidth(64)
+        lbl.setFixedWidth(76)
         row.addWidget(lbl)
         self.cmb_corner = QtWidgets.QComboBox()
         for key, text in CORNER_LABELS:
@@ -481,7 +484,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         v.addLayout(row)
         row = QtWidgets.QHBoxLayout()
         lbl = QtWidgets.QLabel("Chart")
-        lbl.setFixedWidth(64)
+        lbl.setFixedWidth(76)
         row.addWidget(lbl)
         self.cmb_chart = QtWidgets.QComboBox()
         self.cmb_chart.setToolTip("Chart definitions in shared\\lookdev\\reference\\ "
@@ -509,17 +512,24 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.row_ev = _SliderRow("Exposure", -5.0, 5.0, 0.1, 2, " EV")
         self.row_ev.setToolTip("Dome intensity in stops over the HDRI default")
         self.row_ev.valueChanged.connect(self.on_exposure)
-        self.chk_bg = QtWidgets.QCheckBox("Background visible in render")
-        self.chk_bg.setToolTip("Off: the dome still lights the asset and the camera sees the\n"
-                               "colour on the right instead (alpha stays clean for comp)")
-        self.chk_bg.toggled.connect(self.on_background)
+        self.cmb_bg = QtWidgets.QComboBox()
+        for key, text in (("hdri", "HDRI"), ("blur", "Blurred HDRI"), ("color", "Colour")):
+            self.cmb_bg.addItem(text, key)
+        self.cmb_bg.setToolTip("What the camera sees behind the asset — the light always comes\n"
+                               "from the full HDRI.\n"
+                               "Blurred HDRI: soft copy from the library (Refresh library makes it)\n"
+                               "Colour: flat colour; alpha stays clean for comp")
+        self.cmb_bg.currentIndexChanged.connect(lambda *_: self.on_background_mode())
         self.b_bg_color = QtWidgets.QToolButton()
-        self.b_bg_color.setFixedSize(40, 20)
-        self.b_bg_color.setToolTip("Background colour when the dome is hidden")
+        self.b_bg_color.setFixedSize(40, 22)
+        self.b_bg_color.setToolTip("Background colour (Colour mode)")
         self.b_bg_color.clicked.connect(self.on_pick_bg_color)
         self._bg_color = (0.18, 0.18, 0.18)
         bg_row = QtWidgets.QHBoxLayout()
-        bg_row.addWidget(self.chk_bg, 1)
+        lbl = QtWidgets.QLabel("Background")
+        lbl.setFixedWidth(76)
+        bg_row.addWidget(lbl)
+        bg_row.addWidget(self.cmb_bg, 1)
         bg_row.addWidget(self.b_bg_color)
         self.b_save_default = QtWidgets.QPushButton("Save as HDRI default")
         self.b_save_default.setToolTip("Writes rotation and intensity to the HDRI .json sidecar —\n"
@@ -632,7 +642,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
             return
         save_settings(turntable=int(self.chk_turntable.isChecked()),
                       ground=int(self.chk_ground.isChecked()),
-                      preset=self.cmb_preset.currentText(),
+                      preset=self._preset_id(),
                       chrome=int(self.chk_chrome.isChecked()),
                       grey=int(self.chk_grey.isChecked()),
                       chart_on=int(self.chk_chart.isChecked()),
@@ -711,12 +721,13 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self.lbl_renderer.style().unpolish(self.lbl_renderer)
             self.lbl_renderer.style().polish(self.lbl_renderer)
 
-            current = self.cmb_preset.currentText() or self._settings.get("preset", "")
+            current = self._preset_id() if self.cmb_preset.count() else \
+                self._settings.get("preset", "turntable_default")
             self.cmb_preset.clear()
-            names = list(core.list_presets().keys()) or ["turntable_default"]
-            self.cmb_preset.addItems(names)
-            if current in names:
-                self.cmb_preset.setCurrentText(current)
+            labels = core.preset_labels() or {"turntable_default": "turntable_default"}
+            for name in sorted(labels, key=lambda n: (n != "turntable_default", labels[n].lower())):
+                self.cmb_preset.addItem(labels[name], name)
+            self._select_preset(current)
 
             cur_chart = self.cmb_chart.currentData() or self._settings.get("chart") \
                 or core.DEFAULT_CHART
@@ -841,14 +852,14 @@ class LookdevRigDialog(QtWidgets.QDialog):
         """Live controls follow the built rig; disabled when there is none."""
         state = builder.hdri_state()
         on = state is not None
-        for w in (self.row_rot, self.row_ev, self.chk_bg, self.b_save_default):
+        for w in (self.row_rot, self.row_ev, self.cmb_bg, self.b_save_default):
             w.setEnabled(on)
         if on:
             self.row_rot.set_value(state["rotation"])
             self.row_ev.set_value(state["exposure"])
-            self.chk_bg.blockSignals(True)
-            self.chk_bg.setChecked(state["bg_visible"])
-            self.chk_bg.blockSignals(False)
+            self.cmb_bg.blockSignals(True)
+            self.cmb_bg.setCurrentIndex(max(0, self.cmb_bg.findData(state["bg_mode"])))
+            self.cmb_bg.blockSignals(False)
             self.lbl_live.setText("Acting on the rig  ·  %s" % state["hdri"])
             self._bg_color = builder.background_color()
             self._paint_bg_button()
@@ -868,7 +879,11 @@ class LookdevRigDialog(QtWidgets.QDialog):
                         cmb.blockSignals(False)
         else:
             self.lbl_live.setText("Build the rig to adjust the dome live")
-        self.b_bg_color.setEnabled(not self.chk_bg.isChecked() or not on)
+        self.b_bg_color.setEnabled(self.cmb_bg.currentData() == "color" or not on)
+        h = self._current_hdri()
+        blur_item = self.cmb_bg.model().item(1)
+        if blur_item is not None:
+            blur_item.setEnabled(bool(h and h.bg))
         self.cmb_chart.setEnabled(self.chk_chart.isChecked())
 
     def _update_camera_label(self):
@@ -897,7 +912,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         if sel and hdri is None:
             hdri, preset = builder.stored_settings(sel[0])
             if preset:
-                self.cmb_preset.setCurrentText(preset)
+                self._select_preset(preset)
         hdri = hdri or self._settings.get("hdri")
         for i in range(self.grid.count()):
             if self.grid.item(i).data(QtCore.Qt.UserRole) == hdri:
@@ -906,6 +921,14 @@ class LookdevRigDialog(QtWidgets.QDialog):
                 return
         if self.grid.count():
             self.grid.setCurrentRow(0)
+
+    def _preset_id(self):
+        return self.cmb_preset.currentData() or "turntable_default"
+
+    def _select_preset(self, name):
+        i = self.cmb_preset.findData(name)
+        if i >= 0:
+            self.cmb_preset.setCurrentIndex(i)
 
     def _on_preset_changed(self, name):
         if not name or self._loading:
@@ -1034,16 +1057,22 @@ class LookdevRigDialog(QtWidgets.QDialog):
         except Exception as exc:  # noqa: BLE001
             self._status("Exposure: %s" % exc, C_ERR)
 
-    def on_background(self, on):
-        self.b_bg_color.setEnabled(not on)
+    def on_background_mode(self):
+        mode = self.cmb_bg.currentData()
+        self.b_bg_color.setEnabled(mode == "color")
+        if self._loading or builder.hdri_state() is None:
+            return
         try:
-            builder.set_background_visible(on, color=self._bg_color)
+            log = builder.set_background_mode(mode, color=self._bg_color)
         except Exception as exc:  # noqa: BLE001
             self._status("Background: %s" % exc, C_ERR)
+            self._sync_live()
             return
-        if not on:
-            self._status("Dome hidden in render  ·  background %s"
-                         % _qcolor_from_linear(self._bg_color).name(), C_OK)
+        for line in log:
+            self._status(line.strip(), C_WARN)
+        text = {"hdri": "HDRI", "blur": "blurred HDRI",
+                "color": "colour %s" % _qcolor_from_linear(self._bg_color).name()}[mode]
+        self._status("Background: %s" % text, C_OK)
 
     def on_save_default(self):
         state = builder.hdri_state()
@@ -1112,12 +1141,14 @@ class LookdevRigDialog(QtWidgets.QDialog):
         if hdri is None:
             self._status("Pick an HDRI", C_WARN)
             return
-        preset_name = self.cmb_preset.currentText() or "turntable_default"
+        preset_name = self._preset_id()
         overrides = {
             "turntable": {"enabled": self.chk_turntable.isChecked()},
             "ground": {"shadow_catcher": self.chk_ground.isChecked()},
             "clay": {"enabled": self.chk_clay.isChecked()},
             "refs": self._refs_values(),
+            "background": {"mode": self.cmb_bg.currentData() or "hdri",
+                           "color": list(self._bg_color)},
         }
         self._update_camera_label()
         try:

@@ -104,9 +104,13 @@ rt.Sphere = _node_class("Sphere", GEO, ("radius", "segs"))
 rt.Plane = _node_class("Plane", GEO, ("width", "length", "widthsegs", "lengthsegs"))
 rt.Box = _node_class("Box", GEO)
 rt.VRayLight = _node_class("VRayLight", LIGHT, ("type", "dome_spherical", "texmap", "texmap_on",
-                                                "multiplier", "invisible", "texmap_locktolight"))
+                                                "multiplier", "invisible", "texmap_locktolight",
+                                                "affect_diffuse", "affect_specular",
+                                                "affect_reflections"))
 rt.Arnold_Light = _node_class("Arnold_Light", LIGHT, ("shapeType", "texmap", "texmapOn",
-                                                      "useColor", "intensity", "exposure", "camera"))
+                                                      "useColor", "intensity", "exposure", "camera",
+                                                      "diffuse", "specular", "sss", "indirect",
+                                                      "volume", "transmission"))
 rt.VRayBitmap = _mtl_class("VRayBitmap", ("HDRIMapName", "mapType", "horizontalRotation"))
 rt.VRayMtl = _mtl_class("VRayMtl", ("diffuse", "reflection", "reflection_glossiness",
                                     "reflection_fresnel", "reflection_metalness", "diffuse_roughness"))
@@ -154,14 +158,30 @@ rt.execute = lambda code: EXECUTED.append(code)
 
 
 class _Layer:
-    def __init__(self): self.nodes = []
+    PROPS = ("isFrozen", "showFrozenInGray", "current")
+
+    def __init__(self):
+        self.nodes, self.isFrozen, self.showFrozenInGray, self.current = [], False, True, False
+
     def addNode(self, n): self.nodes.append(n)
 
 
-LAYERS = {}
+LAYERS = {"0": _Layer()}
+
+
+def _del_layer(name):
+    lyr = LAYERS.get(name)
+    if lyr is None or lyr.current or any(n in SCENE for n in lyr.nodes):
+        return False
+    del LAYERS[name]
+    return True
+
+
 rt.LayerManager = types.SimpleNamespace(
     getLayerFromName=lambda n: LAYERS.get(n, UNDEF),
-    newLayerFromName=lambda n: LAYERS.setdefault(n, _Layer()))
+    newLayerFromName=lambda n: LAYERS.setdefault(n, _Layer()),
+    getLayer=lambda i: LAYERS["0"],
+    deleteLayerByName=_del_layer)
 rt.custAttributes = types.SimpleNamespace()
 
 
@@ -273,7 +293,7 @@ check("ground: orbits with the rig", ground.parent is rt.getNodeByName("LKD_root
 spin = rt.getNodeByName("LKD_hdri_spin")
 check("dome under the HDRI spin pivot", dome.parent is spin and spin.parent is rt.getNodeByName("LKD_root"))
 check("turntable spins the pivot, not the dome",
-      any('spin.rotation.controller.Z_Rotation = 360.0' in c for c in EXECUTED)
+      any('spin.rotation.controller.Z_Rotation = -360.0' in c for c in EXECUTED)
       and not any('dome.rotation' in c for c in EXECUTED if 'with animate' in c))
 check("refs parented to the camera",
       all(rt.getNodeByName(n).parent is rt.getNodeByName("LKD_cam")
@@ -283,6 +303,8 @@ check("store: hidden, remembers the asset", store.isHidden and list(store.assets
 check("turntable keyed with HDRI offset", any("Z_Rotation = 45.0" in c for c in EXECUTED))
 check("asset untouched (material)", asset.material is asset_mtl)
 check("rig on layer LOOKDEV_RIG", len(LAYERS["LOOKDEV_RIG"].nodes) == len(rig["nodes"]))
+check("layer frozen, shown in colour", LAYERS["LOOKDEV_RIG"].isFrozen
+      and all(getattr(n, "showFrozenInGray", True) is False for n in rig["nodes"]))
 
 # 1b. live HDRI controls
 st = builder.hdri_state()
@@ -374,6 +396,44 @@ check("bg colour: delete rig restores the scene background",
 rig = builder.build("studio_a")
 dome = rt.getNodeByName("LKD_dome")
 
+# 1e. background modes
+try:
+    builder.set_background_mode("blur"); ok = False
+except RuntimeError as e:
+    ok = "Refresh library" in str(e)
+check("bg mode: blur needs Refresh library first", ok)
+os.makedirs(core.cache_dir(hdri_dir), exist_ok=True)
+for n in ("studio_a", "exterior_b"):
+    open(core.bg_cache_path(os.path.join(hdri_dir, n + ".exr")), "wb").close()
+EXECUTED.clear()
+builder.set_background_mode("blur")
+bgd = rt.getNodeByName("LKD_dome_bg")
+check("bg mode: blurred dome, camera only", bgd is not UNDEF and bgd.texmap.HDRIMapName.endswith("studio_a.bg.exr")
+      and bgd.affect_diffuse is False and bgd.affect_reflections is False and bgd.invisible is False
+      and dome.invisible is True)
+check("bg mode: blurred dome follows rig (same pivot, same rotation)",
+      bgd.parent is rt.getNodeByName("LKD_hdri_spin")
+      and any('"LKD_dome_bg").rotation.controller.Z_Rotation = 45.0' in c for c in EXECUTED))
+builder.set_rotation(60); builder.set_exposure(1.0)
+check("bg mode: rotation / exposure drive both domes",
+      any('"LKD_dome_bg").rotation.controller.Z_Rotation = 60.0' in c for c in EXECUTED)
+      and bgd.multiplier == dome.multiplier == 4.0)
+builder.set_exposure(0.0)
+open(os.path.join(hdri_dir, "nobg_c.exr"), "wb").close()
+builder.set_hdri("nobg_c")
+check("bg mode: HDRI without blurred copy falls back to HDRI background",
+      builder.hdri_state()["bg_mode"] == "hdri" and rt.getNodeByName("LKD_dome_bg") is UNDEF
+      and dome.invisible is False)
+os.remove(os.path.join(hdri_dir, "nobg_c.exr"))
+builder.set_hdri("studio_a")
+builder.set_background_mode("color", color=(0.2, 0.2, 0.2))
+check("bg mode: colour removes the blurred dome",
+      rt.getNodeByName("LKD_dome_bg") is UNDEF and rt.useEnvironmentMap is False)
+builder.set_background_mode("hdri")
+check("bg mode: back to HDRI restores the scene", rt.useEnvironmentMap is True and dome.invisible is False)
+for n in ("studio_a", "exterior_b"):
+    os.remove(core.bg_cache_path(os.path.join(hdri_dir, n + ".exr")))
+
 # 2. clay
 n = builder.set_clay(True)
 check("clay on: both asset nodes", n == 2 and builder.clay_is_on())
@@ -392,6 +452,7 @@ builder.set_clay(True)
 builder.remove_rig()
 check("remove_rig: materials restored", asset.material is asset_mtl and legs.material is UNDEF)
 check("remove_rig: no LKD_ nodes left", not any(n.name.startswith("LKD_") for n in SCENE))
+check("remove_rig: LOOKDEV_RIG layer deleted", "LOOKDEV_RIG" not in LAYERS)
 
 # 4. selected camera -> copied framing
 user_cam = rt.Physcam(name="CAM_approved", fov=30.0)

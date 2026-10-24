@@ -65,6 +65,9 @@ UP_REFS = "lookdev_refs"               # JSON: items / corner / chart currently 
 UP_DIST = "lookdev_distance"           # lens -> asset distance (keeps ref size on rebuild)
 UP_RADIUS = "lookdev_radius"
 REF_NAMES = (P + "chrome", P + "grey18", P + "chart_board")
+UP_BG_MODE = "lookdev_bg_mode"         # hdri / blur / color
+BG_DOME_NAME = P + "dome_bg"
+BG_MODES = ("hdri", "blur", "color")
 
 # Custom attribute on LKD_store. Lives in the .max file, so a scene saved with clay on
 # can still restore the original materials in a later session.
@@ -160,6 +163,34 @@ def remove_rig():
     for n in rig_nodes():
         if rt.isValidNode(n):
             rt.delete(n)
+    _delete_layer()
+
+
+def _delete_layer():
+    """Removes the LOOKDEV_RIG layer once it is empty (no trace left in the scene)."""
+    lyr = rt.LayerManager.getLayerFromName(core.RIG_LAYER)
+    if is_undefined(lyr):
+        return
+    try:
+        if lyr.current:
+            rt.LayerManager.getLayer(0).current = True     # layer "0" is always there
+        rt.LayerManager.deleteLayerByName(core.RIG_LAYER)
+    except Exception as exc:  # noqa: BLE001
+        print("[Lookdev Rig] could not delete layer %s: %s" % (core.RIG_LAYER, exc))
+
+
+def _freeze_layer():
+    """Rig layer frozen so it can't be picked by accident — but shown in colour."""
+    lyr = rt.LayerManager.getLayerFromName(core.RIG_LAYER)
+    if is_undefined(lyr):
+        return
+    for n in rig_nodes():
+        try:
+            n.showFrozenInGray = False
+        except Exception:  # noqa: BLE001
+            pass
+    set_prop(lyr, "showFrozenInGray", False)
+    lyr.isFrozen = True
 
 
 def _layer():
@@ -232,7 +263,8 @@ def _frame_from_camera(cam, bmin, bmax, aspect):
 def _animate_turntable(root_name, spin_name, timing):
     """
     Object pass: the root (camera + refs + dome + ground) orbits 360° -> the asset turns
-    under fixed light. HDRI pass: the root holds still and only LKD_hdri_spin turns 360°.
+    under fixed light. HDRI pass: the root holds still and only LKD_hdri_spin turns 360°,
+    in the same direction, so the light keeps sweeping the same way around the asset.
     Linear keys; the user's default tangent type is restored afterwards.
     """
     s, oe, he = timing.start, timing.object_end, timing.hdri_end
@@ -249,7 +281,7 @@ def _animate_turntable(root_name, spin_name, timing):
         at time {s}  root.rotation.controller.Z_Rotation = 0.0
         at time {oe} root.rotation.controller.Z_Rotation = {a}
         at time {oe} spin.rotation.controller.Z_Rotation = 0.0
-        at time {he} spin.rotation.controller.Z_Rotation = 360.0
+        at time {he} spin.rotation.controller.Z_Rotation = {a}
     )
     maxOps.setDefaultTangentType tIn tOut writeInCfgFile:false
     animationRange = interval {s} {he_last}
@@ -298,35 +330,97 @@ def hdri_state():
         "rotation": _prop_float(st, UP_ROT, 0.0),
         "exposure": _prop_float(st, UP_EV, 0.0),
         "base_intensity": _prop_float(st, UP_BASE, 1.0),
-        "bg_visible": _prop_float(st, UP_BG, 1.0) > 0.5,
+        "bg_visible": _bg_mode(st) == "hdri",
+        "bg_mode": _bg_mode(st),
     }
+
+
+def _bg_mode(st):
+    raw = rt.getUserProp(st, UP_BG_MODE)
+    if not is_undefined(raw) and str(raw) in BG_MODES:
+        return str(raw)
+    return "hdri" if _prop_float(st, UP_BG, 1.0) > 0.5 else "color"   # rigs before 0.6
 
 
 def set_rotation(degrees):
     """Absolute HDRI rotation (the turntable spin is added on top)."""
     st, dome = _require_rig()
     _set_z_rotation(dome.name, float(degrees))
+    if _node(BG_DOME_NAME) is not None:
+        _set_z_rotation(BG_DOME_NAME, float(degrees))
     rt.setUserProp(st, UP_ROT, float(degrees))
 
 
 def set_exposure(ev):
     st, dome = _require_rig()
     base = _prop_float(st, UP_BASE, 1.0)
-    adapters.detect().set_dome_intensity(dome, base * (2.0 ** float(ev)))
+    adapter = adapters.detect()
+    adapter.set_dome_intensity(dome, base * (2.0 ** float(ev)))
+    bg = _node(BG_DOME_NAME)
+    if bg is not None:
+        adapter.set_dome_intensity(bg, base * (2.0 ** float(ev)))
     rt.setUserProp(st, UP_EV, float(ev))
 
 
 def set_background_visible(visible, color=None):
     """Dome visible to camera, or hidden with a flat background colour (linear rgb)."""
+    if color is not None:
+        st, _dome = _require_rig()
+        rt.setUserProp(st, UP_BG_COLOR, ",".join("%.6f" % v for v in color[:3]))
+    return set_background_mode("hdri" if visible else "color")
+
+
+def _delete_bg_dome():
+    n = _node(BG_DOME_NAME)
+    if n is not None and rt.isValidNode(n):
+        rt.delete(n)
+
+
+def set_background_mode(mode, color=None):
+    """
+    What the camera sees behind the asset (lighting always comes from the full HDRI):
+      hdri   the HDRI itself
+      blur   the blurred copy from the library (_cache/<name>.bg.exr) on a second dome that
+             only the camera sees, so reflections and light stay sharp
+      color  a flat colour (scene background colour; the environment map is turned off)
+    """
+    if mode not in BG_MODES:
+        raise ValueError("Unknown background mode: %s" % mode)
     st, dome = _require_rig()
-    adapters.detect().set_dome_background(dome, bool(visible))
-    rt.setUserProp(st, UP_BG, 1 if visible else 0)
     if color is not None:
         rt.setUserProp(st, UP_BG_COLOR, ",".join("%.6f" % v for v in color[:3]))
-    if visible:
+    adapter = adapters.detect()
+    bg_path = None
+    if mode == "blur":
+        h = _resolve_hdri(hdri_state()["hdri"])
+        if not h.bg:
+            raise RuntimeError("%s has no blurred background yet — Refresh library" % h.label)
+        bg_path = h.bg
+    _delete_bg_dome()
+    if mode == "hdri":
+        adapter.set_dome_background(dome, True)
         _restore_environment()
+    elif mode == "blur":
+        adapter.set_dome_background(dome, False)
+        _restore_environment()
+        state = hdri_state()
+        intensity = state["base_intensity"] * (2.0 ** state["exposure"])
+        bg = adapter.create_bg_dome(bg_path, intensity, BG_DOME_NAME)
+        bg.position = dome.position
+        bg.parent = dome.parent
+        _set_z_rotation(BG_DOME_NAME, state["rotation"])
+        lyr = _layer()
+        lyr.addNode(bg)
+        try:
+            bg.showFrozenInGray = False
+        except Exception:  # noqa: BLE001
+            pass
     else:
+        adapter.set_dome_background(dome, False)
         _apply_background_color(st, background_color())
+    rt.setUserProp(st, UP_BG_MODE, mode)
+    rt.setUserProp(st, UP_BG, 1 if mode == "hdri" else 0)
+    return list(adapter.log)
 
 
 def set_hdri(hdri, keep_adjustments=False):
@@ -349,6 +443,11 @@ def set_hdri(hdri, keep_adjustments=False):
     else:
         set_rotation(hdri.rotation_offset)
         set_exposure(0.0)
+    if _bg_mode(st) == "blur":
+        try:
+            set_background_mode("blur")
+        except RuntimeError:
+            set_background_mode("hdri")             # new HDRI has no blurred copy yet
     for a in (st.assets if hasattr(st, "assets") else []):
         if rt.isValidNode(a):
             rt.setUserProp(a, core.USER_PROP_HDRI, hdri.name)
@@ -544,6 +643,7 @@ def update_refs(items=None, corner=None, chart=None):
 
         nodes = _build_refs(adapter, frame, preset, cam, keep)
         rt.setUserProp(st, UP_REFS, json.dumps(cur))
+    _freeze_layer()
     rt.redrawViews()
     return {"refs": nodes, "settings": cur, "log": list(adapter.log)}
 
@@ -596,7 +696,7 @@ def set_background_color(rgb):
     """Colour (linear, working space) seen in the render when the dome is hidden."""
     st, _dome = _require_rig()
     rt.setUserProp(st, UP_BG_COLOR, ",".join("%.6f" % v for v in rgb[:3]))
-    if not hdri_state()["bg_visible"]:
+    if hdri_state()["bg_mode"] == "color":
         _apply_background_color(st, rgb)
 
 
@@ -728,6 +828,16 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
 
     if preset["clay"].get("enabled", False):
         rig["clay"] = set_clay(True)
+
+    bg = preset.get("background") or {}
+    if bg.get("color") is not None:
+        rt.setUserProp(_store(), UP_BG_COLOR, ",".join("%.6f" % v for v in bg["color"][:3]))
+    if bg.get("mode", "hdri") != "hdri":
+        try:
+            set_background_mode(bg["mode"])
+        except Exception as exc:  # noqa: BLE001
+            rig["warnings"].append("Background: %s" % exc)
+    _freeze_layer()
 
     if set_viewport:
         rt.viewport.setCamera(cam)

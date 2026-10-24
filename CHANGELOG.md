@@ -1,5 +1,12 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.6 — Lookdev Rig 0.6.0
+- **Delete rig leaves no trace:** the `LOOKDEV_RIG` layer is removed too (after restoring materials and scene background)
+- **Rig layer frozen** so it can't be picked by accident, with *Show Frozen in Gray* off — it stays in colour in the viewport. The tool itself still updates it (refs, dome, background)
+- **Background mode** (replaces the checkbox): HDRI / **Blurred HDRI** / Colour. Blurred uses the library copy (`_cache/<name>.bg.exr`, made by Refresh library) on a second dome that only the camera sees (`LKD_dome_bg`), so lighting and reflections stay sharp; it follows rotation, exposure, HDRI swaps and the turntable. HDRIs without a blurred copy fall back to HDRI
+- **Presets:** shown by label; new **Turntable · clockwise** next to the default (counter-clockwise). The HDRI pass now spins in the same direction as the object pass
+- `dev/test_lookdev.py`: 77 checks
+
 ## v2.8.5 — Lookdev Rig 0.5.0
 - **References, live on the rig:** toggle Chrome / Grey / Chart individually (the rest pack towards the corner), pick the corner (bottom right default, bottom left, top right, top left) and the chart — only the references are rebuilt, the rest of the rig stays
 - **Charts are data:** every `*.json` with patches in `shared\lookdev\reference\` shows in the Chart list (every toolbar). Patches can sit anywhere on a rows × cols grid and be given as CIELAB D50 (as X-Rite / Calibrite publish them), 8-bit sRGB or linear. `_TEMPLATE_chart.json` documents the format

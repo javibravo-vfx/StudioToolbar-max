@@ -45,6 +45,11 @@ class ArnoldAdapter(RenderAdapter):
         set_first(light, ("camera", "visible_camera", "camera_visibility"), 1.0, self.log)
         return light
 
+    def make_camera_only(self, node):
+        set_first(node, ("camera", "visible_camera", "camera_visibility"), 1.0, self.log)
+        for p in ("diffuse", "specular", "sss", "indirect", "volume", "transmission"):
+            set_first(node, (p, p + "_visibility", "visible_" + p), 0.0, self.log)
+
     def set_dome_background(self, node, visible):
         return set_first(node, ("camera", "visible_camera", "camera_visibility"),
                          1.0 if visible else 0.0, self.log) is not None

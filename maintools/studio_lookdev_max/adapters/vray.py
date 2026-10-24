@@ -54,6 +54,12 @@ class VRayAdapter(RenderAdapter):
                         "or the HDRI won't rotate")
         return False
 
+    def make_camera_only(self, node):
+        for p in ("affect_diffuse", "affect_specular", "affect_reflections"):
+            set_prop(node, p, False, self.log)
+        set_prop(node, "invisible", False, self.log)
+        set_first(node, ("castShadows", "cast_shadows"), False)
+
     def set_dome_background(self, node, visible):
         return set_prop(node, "invisible", not visible, self.log)
 

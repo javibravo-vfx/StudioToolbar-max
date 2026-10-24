@@ -6,7 +6,7 @@
   - Refresh library asks before processing a big collection; it can be cancelled and resumed
   - The rig stores the HDRI's full path, so live controls and Save default work with any library
 - **Right panel tidied:** aligned label / control columns, sections Rig · References · Dome; fixed-height HDRI details (nothing jumps when switching HDRIs), long text elided with full text in the tooltip, wider minimum width (no cut text), value boxes sized to their content and aligned, colour swatch the same height as the Background list
-- `dev/test_lookdev.py`: external library checks (85 checks)
+- `dev/test_lookdev.py`: external library checks (84 checks)
 
 ## v2.8.6 — Lookdev Rig 0.6.0
 - **Delete rig leaves no trace:** the `LOOKDEV_RIG` layer is removed too (after restoring materials and scene background)

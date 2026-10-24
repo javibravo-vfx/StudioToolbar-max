@@ -136,6 +136,7 @@ rt.classOf = lambda o: getattr(o, "cls", type(o).__name__)
 rt.superClassOf = lambda n: n.SUPER
 rt.isProperty = lambda o, p: p in getattr(o, "PROPS", ())
 rt.setProperty = setattr
+rt.getProperty = getattr
 rt.getPropNames = lambda o: list(getattr(o, "PROPS", ()))
 rt.isValidNode = lambda n: isinstance(n, Node) and n in SCENE
 rt.delete = lambda n: SCENE.remove(n)
@@ -234,6 +235,9 @@ shutil.copytree(os.path.join(SHARED, "lookdev"), os.environ["STUDIO_LOOKDEV_DIR"
 hdri_dir = os.path.join(os.environ["STUDIO_LOOKDEV_DIR"], "hdri")
 open(os.path.join(hdri_dir, "studio_a.exr"), "wb").close()
 json.dump({"rotation_offset_deg": 45, "intensity": 2.0}, open(os.path.join(hdri_dir, "studio_a.json"), "w"))
+open(os.path.join(hdri_dir, "exterior_b.hdr"), "wb").close()
+json.dump({"rotation_offset_deg": -30, "intensity": 0.5, "tags": ["sun"]},
+          open(os.path.join(hdri_dir, "exterior_b.json"), "w"))
 
 from studio_lookdev_max import builder  # noqa: E402
 from studio_lookdev import core  # noqa: E402
@@ -263,6 +267,11 @@ check("ground: V-Ray matte wrapper, no shadow cast",
       type(ground.material).__name__ == "VRayMtlWrapper" and ground.material.matte_surface
       and ground.material.alpha_contribution == -1.0 and not ground.castShadows)
 check("ground: orbits with the rig", ground.parent is rt.getNodeByName("LKD_root"))
+spin = rt.getNodeByName("LKD_hdri_spin")
+check("dome under the HDRI spin pivot", dome.parent is spin and spin.parent is rt.getNodeByName("LKD_root"))
+check("turntable spins the pivot, not the dome",
+      any('spin.rotation.controller.Z_Rotation = 360.0' in c for c in EXECUTED)
+      and not any('dome.rotation' in c for c in EXECUTED if 'with animate' in c))
 check("refs parented to the camera",
       all(rt.getNodeByName(n).parent is rt.getNodeByName("LKD_cam")
           for n in ("LKD_chrome", "LKD_grey18", "LKD_chart_board")))
@@ -271,6 +280,39 @@ check("store: hidden, remembers the asset", store.isHidden and list(store.assets
 check("turntable keyed with HDRI offset", any("Z_Rotation = 45.0" in c for c in EXECUTED))
 check("asset untouched (material)", asset.material is asset_mtl)
 check("rig on layer LOOKDEV_RIG", len(LAYERS["LOOKDEV_RIG"].nodes) == len(rig["nodes"]))
+
+# 1b. live HDRI controls
+st = builder.hdri_state()
+check("live: state after build", st and st["hdri"] == "studio_a" and st["rotation"] == 45
+      and st["exposure"] == 0 and st["bg_visible"], st)
+EXECUTED.clear()
+builder.set_rotation(90)
+check("live: rotation on the dome, no rebuild",
+      any('"LKD_dome").rotation.controller.Z_Rotation = 90.0' in c for c in EXECUTED)
+      and builder.hdri_state()["rotation"] == 90 and rt.getNodeByName("LKD_dome") is dome)
+builder.set_exposure(1.0)
+check("live: +1 EV doubles intensity", abs(dome.multiplier - 4.0) < 1e-9, dome.multiplier)
+builder.set_background_visible(False)
+check("live: background off -> V-Ray dome invisible", dome.invisible is True
+      and builder.hdri_state()["bg_visible"] is False)
+builder.set_background_visible(True)
+h = builder.set_hdri("exterior_b")
+check("live: swap HDRI keeps the dome node", rt.getNodeByName("LKD_dome") is dome
+      and dome.texmap.HDRIMapName.endswith("exterior_b.hdr"))
+st = builder.hdri_state()
+check("live: swap resets to the new sidecar", st["rotation"] == -30 and st["exposure"] == 0
+      and abs(dome.multiplier - 0.5) < 1e-9, (st, dome.multiplier))
+check("live: asset tag follows the swap", asset.userprops[core.USER_PROP_HDRI] == "exterior_b")
+builder.set_rotation(12.5)
+builder.set_exposure(-1.0)
+saved = builder.save_hdri_defaults()
+side = json.load(open(os.path.join(hdri_dir, "exterior_b.json")))
+check("save default: sidecar rotation + intensity, other fields kept",
+      side["rotation_offset_deg"] == 12.5 and abs(side["intensity"] - 0.25) < 1e-9
+      and side["tags"] == ["sun"], side)
+check("save default: EV folded (light unchanged)", builder.hdri_state()["exposure"] == 0
+      and abs(dome.multiplier - 0.25) < 1e-9)
+builder.set_hdri("studio_a")
 
 # 2. clay
 n = builder.set_clay(True)
@@ -324,6 +366,10 @@ check("arnold: skydome with ai_image", dome.shapeType == 6 and dome.texmap.filen
 check("arnold: shadow matte ground",
       type(rt.getNodeByName("LKD_shadow_catcher").material).__name__ == "ai_shadow_matte")
 check("arnold: no missing props", not rig["log"], rig["log"][:3])
+builder.set_background_visible(False)
+check("arnold: background off -> camera visibility 0", dome.camera == 0.0)
+builder.set_hdri("exterior_b")
+check("arnold: swap HDRI on ai_image", dome.texmap.filename.endswith("exterior_b.hdr"))
 builder.remove_rig()
 
 # 7. stub engine
@@ -334,7 +380,43 @@ except Exception as e:  # noqa: BLE001
     ok = "not implemented" in str(e)
 check("redshift stub: clear error", ok)
 
-# 8. core: same on-screen ref size regardless of asset scale
+# 8. library maintenance (generic part; Max image I/O needs Max)
+from studio_lookdev import library  # noqa: E402
+jobs = library.pending_jobs(hdri_dir)
+check("library: both HDRIs need thumb + bg", len(jobs) == 2 and all(j.thumb and j.bg and not j.tx for j in jobs))
+written = []
+
+
+def _read(path, w, h):
+    return [0.5, 0.6, 0.7] * (w * h)
+
+
+def _jpg(path, data, w, h):
+    assert len(data) == w * h * 3
+    written.append(path); open(path, "wb").write(b"jpg")
+
+
+def _exr(path, data, w, h):
+    assert len(data) == w * h * 3
+    written.append(path); open(path, "wb").write(b"exr")
+
+
+rep_ = library.refresh(_read, _jpg, _exr, folder=hdri_dir)
+check("library: 4 files into _cache", len(written) == 4 and all("_cache" in w for w in written)
+      and not rep_.errors, rep_.errors)
+check("library: up to date afterwards", not library.pending_jobs(hdri_dir))
+hs = {h.name: h for h in core.list_hdris(hdri_dir)}
+check("library: list_hdris picks cached thumb + bg",
+      hs["studio_a"].thumb.endswith("studio_a.thumb.jpg") and hs["studio_a"].bg.endswith("studio_a.bg.exr"))
+open(os.path.join(hdri_dir, "studio_a.jpg"), "wb").close()
+check("library: hand-made thumbnail wins and is never regenerated",
+      core.find_hdri("studio_a", hdri_dir).thumb.endswith(os.sep + "studio_a.jpg")
+      and not any(j.thumb for j in library.pending_jobs(hdri_dir, force=True) if j.hdri.name == "studio_a"))
+check("library: cache files are not listed as HDRIs", len(core.list_hdris(hdri_dir)) == 2)
+tm = library.tonemap_srgb8([0.18, 0.18, 0.18] * 4)
+check("library: tonemap grey stays neutral", tm[0] == tm[1] == tm[2] and 60 < tm[0] < 200, tm[:3])
+
+# 9. core: same on-screen ref size regardless of asset scale
 p = core.load_preset()
 sizes = []
 for s in (1.0, 100.0):
@@ -343,6 +425,7 @@ for s in (1.0, 100.0):
     sizes.append(it["radius"] / (-it["pos"][2] * math.tan(fr.vfov / 2)))
 check("core: refs keep screen size at any scale", abs(sizes[0] - sizes[1]) < 1e-9)
 
-shutil.rmtree(tmp, ignore_errors=True)
+if not os.environ.get("LOOKDEV_TEST_KEEP"):
+    shutil.rmtree(tmp, ignore_errors=True)
 print("\n%d failures" % len(fails), fails)
 sys.exit(1 if fails else 0)

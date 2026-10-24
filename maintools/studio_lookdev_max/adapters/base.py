@@ -129,6 +129,35 @@ class RenderAdapter(object):
         """Checks the engine's classes are loaded. Raises if something is missing."""
         return True
 
+    # --- live dome controls (generic; override when an engine differs) --------
+
+    TEXMAP_PROPS = ("texmap", "color_texmap", "shader")
+    FILENAME_PROPS = ("HDRIMapName", "filename", "fileName")
+    INTENSITY_PROPS = ("multiplier", "intensity")
+
+    def dome_texmap(self, node):
+        for p in self.TEXMAP_PROPS:
+            if rt.isProperty(node, p):
+                tex = rt.getProperty(node, p)
+                if not is_undefined(tex):
+                    return tex
+        return None
+
+    def set_dome_hdri(self, node, path):
+        tex = self.dome_texmap(node)
+        if tex is None:
+            self.log.append("  - %s: dome has no texture slot" % self.label)
+            return False
+        return set_first(tex, self.FILENAME_PROPS, path, self.log) is not None
+
+    def set_dome_intensity(self, node, value):
+        return set_first(node, self.INTENSITY_PROPS, float(value), self.log) is not None
+
+    def set_dome_background(self, node, visible):
+        """Dome visible to camera (background) or not (alpha for comp)."""
+        self.log.append("  - %s: background toggle not supported" % self.label)
+        return False
+
     def after_build(self, rig):
         """
         Optional hook at the end of the build. `rig` is the dict builder.build() returns.

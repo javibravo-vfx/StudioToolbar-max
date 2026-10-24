@@ -31,6 +31,9 @@ class VRayAdapter(RenderAdapter):
         set_prop(light, "invisible", False, self.log)            # background visible to camera
         return light
 
+    def set_dome_background(self, node, visible):
+        return set_prop(node, "invisible", not visible, self.log)
+
     def mtl_chrome(self, name):
         m = rt.VRayMtl()
         m.name = name

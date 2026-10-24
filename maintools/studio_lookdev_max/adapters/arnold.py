@@ -45,6 +45,10 @@ class ArnoldAdapter(RenderAdapter):
         set_first(light, ("camera", "visible_camera", "camera_visibility"), 1.0, self.log)
         return light
 
+    def set_dome_background(self, node, visible):
+        return set_first(node, ("camera", "visible_camera", "camera_visibility"),
+                         1.0 if visible else 0.0, self.log) is not None
+
     def mtl_chrome(self, name):
         m = rt.ai_standard_surface()
         m.name = name

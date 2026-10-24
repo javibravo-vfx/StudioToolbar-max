@@ -5,6 +5,8 @@ From the Python Listener:
     from studio_lookdev_max import builder
     builder.build("studio_softbox_4k")            # on the current selection
     builder.set_clay(True)                        # grey override on the asset
+    builder.set_hdri("exterior_overcast_8k")      # live: swap / rotate / expose the dome
+    builder.set_rotation(90); builder.set_exposure(-0.5)
     builder.remove_rig()
 
 Hierarchy it creates (layer LOOKDEV_RIG, every node prefixed LKD_):
@@ -15,7 +17,9 @@ Hierarchy it creates (layer LOOKDEV_RIG, every node prefixed LKD_):
      |   |- LKD_chrome         (chrome ball, fixed size on screen)
      |   |- LKD_grey18         (18% grey ball)
      |   '- LKD_chart_board    (procedural 24-patch ColorChecker)
-     |- LKD_dome               (dome light with the HDRI; spins only during the "HDRI" pass)
+     |- LKD_hdri_spin          (Dummy; spins 360° during the "HDRI" pass)
+     |   '- LKD_dome           (dome light with the HDRI; its own Z rotation = HDRI offset,
+     |                          so the offset can be changed live without re-keying)
      '- LKD_shadow_catcher     (ground plane under the asset that only shows shadows)
     LKD_store (hidden Dummy: remembers the asset and its materials while clay is on)
 
@@ -45,7 +49,15 @@ from .adapters.base import is_undefined, set_prop   # noqa: E402
 P = core.RIG_PREFIX
 UP_AXIS = "Z"
 STORE_NAME = P + "store"
+DOME_NAME = P + "dome"
+SPIN_NAME = P + "hdri_spin"
 CLAY_MTL_NAME = P + "mtl_clay"
+
+# HDRI state kept as user props on LKD_store (survives save / reopen)
+UP_ROT = "lookdev_rotation"            # absolute HDRI rotation, degrees
+UP_EV = "lookdev_exposure"             # EV on top of the base intensity
+UP_BASE = "lookdev_base_intensity"     # sidecar intensity * preset light intensity
+UP_BG = "lookdev_bg_visible"
 
 # Custom attribute on LKD_store. Lives in the .max file, so a scene saved with clay on
 # can still restore the original materials in a later session.
@@ -209,10 +221,10 @@ def _frame_from_camera(cam, bmin, bmax, aspect):
         _v3(tm.row4), _v3(tm.row1), _v3(tm.row2), _v3(tm.row3), hfov, aspect, bmin, bmax)
 
 
-def _animate_turntable(root_name, dome_name, timing, hdri_offset):
+def _animate_turntable(root_name, spin_name, timing):
     """
     Object pass: the root (camera + refs + dome + ground) orbits 360° -> the asset turns
-    under fixed light. HDRI pass: the root holds still and only the dome spins 360°.
+    under fixed light. HDRI pass: the root holds still and only LKD_hdri_spin turns 360°.
     Linear keys; the user's default tangent type is restored afterwards.
     """
     s, oe, he = timing.start, timing.object_end, timing.hdri_end
@@ -220,7 +232,7 @@ def _animate_turntable(root_name, dome_name, timing, hdri_offset):
     ms = """
 (
     local root = getNodeByName {root}
-    local dome = getNodeByName {dome}
+    local spin = getNodeByName {spin}
     local tIn, tOut
     maxOps.getDefaultTangentType &tIn &tOut
     maxOps.setDefaultTangentType #linear #linear writeInCfgFile:false
@@ -228,17 +240,122 @@ def _animate_turntable(root_name, dome_name, timing, hdri_offset):
     (
         at time {s}  root.rotation.controller.Z_Rotation = 0.0
         at time {oe} root.rotation.controller.Z_Rotation = {a}
-        at time {oe} dome.rotation.controller.Z_Rotation = {off}
-        at time {he} dome.rotation.controller.Z_Rotation = {off_end}
+        at time {oe} spin.rotation.controller.Z_Rotation = 0.0
+        at time {he} spin.rotation.controller.Z_Rotation = 360.0
     )
     maxOps.setDefaultTangentType tIn tOut writeInCfgFile:false
     animationRange = interval {s} {he_last}
     rendTimeType = 2
 )
-""".format(root=_ms_str(root_name), dome=_ms_str(dome_name),
-           s=s, oe=oe, he=he, he_last=he - 1, a=a,
-           off=hdri_offset, off_end=hdri_offset + 360.0)
+""".format(root=_ms_str(root_name), spin=_ms_str(spin_name),
+           s=s, oe=oe, he=he, he_last=he - 1, a=a)
     rt.execute(ms)
+
+
+# ---------------------------------------------------------------------------
+# Live HDRI controls (no rebuild)
+# ---------------------------------------------------------------------------
+
+def _node(name):
+    n = rt.getNodeByName(name)
+    return None if is_undefined(n) else n
+
+
+def _prop_float(node, key, default):
+    v = rt.getUserProp(node, key)
+    if is_undefined(v):
+        return default
+    try:
+        return float(str(v))
+    except ValueError:
+        return default
+
+
+def _require_rig():
+    st, dome = _store(), _node(DOME_NAME)
+    if st is None or dome is None:
+        raise RuntimeError("Build the rig first.")
+    return st, dome
+
+
+def hdri_state():
+    """Current dome state, or None when there is no rig:
+    {hdri, rotation, exposure, base_intensity, bg_visible}."""
+    st, dome = _store(), _node(DOME_NAME)
+    if st is None or dome is None:
+        return None
+    h = rt.getUserProp(st, core.USER_PROP_HDRI)
+    return {
+        "hdri": None if is_undefined(h) else str(h),
+        "rotation": _prop_float(st, UP_ROT, 0.0),
+        "exposure": _prop_float(st, UP_EV, 0.0),
+        "base_intensity": _prop_float(st, UP_BASE, 1.0),
+        "bg_visible": _prop_float(st, UP_BG, 1.0) > 0.5,
+    }
+
+
+def set_rotation(degrees):
+    """Absolute HDRI rotation (the turntable spin is added on top)."""
+    st, dome = _require_rig()
+    _set_z_rotation(dome.name, float(degrees))
+    rt.setUserProp(st, UP_ROT, float(degrees))
+
+
+def set_exposure(ev):
+    st, dome = _require_rig()
+    base = _prop_float(st, UP_BASE, 1.0)
+    adapters.detect().set_dome_intensity(dome, base * (2.0 ** float(ev)))
+    rt.setUserProp(st, UP_EV, float(ev))
+
+
+def set_background_visible(visible):
+    st, dome = _require_rig()
+    adapters.detect().set_dome_background(dome, bool(visible))
+    rt.setUserProp(st, UP_BG, 1 if visible else 0)
+
+
+def set_hdri(hdri, keep_adjustments=False):
+    """
+    Swaps the dome texture without rebuilding. By default the new HDRI starts from its own
+    sidecar defaults (rotation offset, intensity) and EV 0.
+    Returns the resolved core.HDRI.
+    """
+    st, dome = _require_rig()
+    hdri = _resolve_hdri(hdri)
+    adapter = adapters.detect()
+    adapter.set_dome_hdri(dome, hdri.path)
+    pname = rt.getUserProp(st, core.USER_PROP_PRESET)
+    preset = core.load_preset("turntable_default" if is_undefined(pname) else str(pname))
+    base = hdri.intensity * float(preset["light"].get("intensity", 1.0))
+    rt.setUserProp(st, UP_BASE, base)
+    rt.setUserProp(st, core.USER_PROP_HDRI, hdri.name)
+    if keep_adjustments:
+        set_exposure(_prop_float(st, UP_EV, 0.0))
+    else:
+        set_rotation(hdri.rotation_offset)
+        set_exposure(0.0)
+    for a in (st.assets if hasattr(st, "assets") else []):
+        if rt.isValidNode(a):
+            rt.setUserProp(a, core.USER_PROP_HDRI, hdri.name)
+    return hdri
+
+
+def save_hdri_defaults():
+    """
+    Writes the current rotation and intensity into the HDRI sidecar, so every toolbar
+    (Max, Houdini, Blender, Maya) starts from them. EV is folded into the intensity.
+    """
+    st, _dome = _require_rig()
+    state = hdri_state()
+    hdri = _resolve_hdri(state["hdri"])
+    intensity = hdri.intensity * (2.0 ** state["exposure"])
+    core.save_sidecar(hdri.path, {"rotation_offset_deg": round(state["rotation"], 3),
+                                  "intensity": round(intensity, 5)})
+    pname = rt.getUserProp(st, core.USER_PROP_PRESET)
+    preset = core.load_preset("turntable_default" if is_undefined(pname) else str(pname))
+    rt.setUserProp(st, UP_BASE, intensity * float(preset["light"].get("intensity", 1.0)))
+    rt.setUserProp(st, UP_EV, 0.0)
+    return {"rotation_offset_deg": state["rotation"], "intensity": intensity}
 
 
 # ---------------------------------------------------------------------------
@@ -356,11 +473,16 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
         cam.transform = _cam_matrix(frame)
         cam.parent = root
 
-        # Dome
+        # HDRI spin pivot + dome
+        spin = keep(rt.Dummy())
+        spin.name = SPIN_NAME
+        spin.boxsize = _p3((frame.radius * 0.15,) * 3)
+        spin.position = _p3(frame.target)
+        spin.parent = root
         intensity = hdri.intensity * float(preset["light"].get("intensity", 1.0))
-        dome = keep(adapter.create_dome(hdri.path, intensity, P + "dome"))
+        dome = keep(adapter.create_dome(hdri.path, intensity, DOME_NAME))
         dome.position = _p3(frame.target)
-        dome.parent = root
+        dome.parent = spin
 
         # Shadow catcher (orbits with the rig: ground and light stay fixed to the camera,
         # exactly like a real object turning on a turntable)
@@ -430,9 +552,14 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
 
         # HDRI rotation + turntable
         _set_z_rotation(dome.name, hdri.rotation_offset)
+        rt.setUserProp(store, core.USER_PROP_HDRI, hdri.name)
+        rt.setUserProp(store, UP_ROT, hdri.rotation_offset)
+        rt.setUserProp(store, UP_EV, 0.0)
+        rt.setUserProp(store, UP_BASE, intensity)
+        rt.setUserProp(store, UP_BG, 1)
         if preset["turntable"].get("enabled", True):
             timing = core.turntable_timing(preset)
-            _animate_turntable(root.name, dome.name, timing, hdri.rotation_offset)
+            _animate_turntable(root.name, spin.name, timing)
             rig["render_range"] = timing.render_range
 
         # Tag the asset so the same setup can be rebuilt in another DCC

@@ -1,5 +1,14 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.3 — Lookdev Rig 0.3.0
+- **Live dome controls** (right panel, act on the built rig without rebuilding): pick another HDRI in the grid and only the dome texture is swapped; Rotation, Exposure (EV) and "Background visible in render" (off = dome still lights, render gets alpha)
+- **Save as HDRI default:** writes the current rotation and intensity into the HDRI `.json` sidecar in the shared library, so every toolbar (Max, Houdini, Blender, Maya) starts from them
+- **Big preview** of the selected HDRI with its defaults and tags
+- **Refresh library:** generates, for every HDRI missing them, a 512×256 auto-exposed thumbnail and a blurred low-res background into `hdri\_cache\` (shared by every DCC). Menu: Missing + Arnold `.tx` (uses MAXtoA's maketx when found), Rebuild all previews. Uses Max's own bitmap loaders, no extra dependencies; hand-made `.jpg` thumbnails next to the HDRI always win
+- Rig: dome now sits under `LKD_hdri_spin` (the turntable spins the pivot), so the HDRI rotation can change live without re-keying
+- Shared: `studio_lookdev/library.py` (what to regenerate + tonemap / blur math; DCCs only provide image read/write)
+- `dev/test_lookdev.py`: live controls, sidecar saving and library checks (55 checks)
+
 ## v2.8.2 — Lookdev Rig 0.2.0
 - **Shadow catcher:** ground plane under the asset that only shows shadows (V-Ray: VRayMtlWrapper matte with alpha -1; Arnold: ai_shadow_matte). Orbits with the rig so ground and light stay fixed to the camera. Toggle in the dialog or `ground.shadow_catcher` in the preset
 - **Use the selected camera:** select a camera together with the asset and the rig takes its framing (`LKD_cam` copies its transform and FOV, so the turntable never moves the original). Works with any camera type; the dialog shows which camera will be used

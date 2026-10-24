@@ -85,12 +85,12 @@ def find_maketx():
     return library.find_maketx(maketx_dirs())
 
 
-def pending(want_tx=False, force=False):
-    return library.pending_jobs(core.HDRI_DIR, want_tx=want_tx, force=force)
+def pending(want_tx=False, force=False, folder=None):
+    return library.pending_jobs(folder or core.HDRI_DIR, want_tx=want_tx, force=force)
 
 
-def refresh(make_tx=False, force=False, progress=None):
+def refresh(make_tx=False, force=False, progress=None, folder=None):
     """Generates missing / stale thumbnails and backgrounds (and .tx when asked and found)."""
     maketx = find_maketx() if make_tx else None
-    return library.refresh(read_linear, write_jpg, write_exr, folder=core.HDRI_DIR,
+    return library.refresh(read_linear, write_jpg, write_exr, folder=folder or core.HDRI_DIR,
                            maketx=maketx, force=force, progress=progress)

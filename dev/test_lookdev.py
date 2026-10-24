@@ -537,6 +537,45 @@ check("library: cache files are not listed as HDRIs", len(core.list_hdris(hdri_d
 tm = library.tonemap_srgb8([0.18, 0.18, 0.18] * 4)
 check("library: tonemap grey stays neutral", tm[0] == tm[1] == tm[2] and 60 < tm[0] < 200, tm[:3])
 
+# 8b. another folder as library (e.g. a collection on the NAS) — never written to
+core.LOCAL_CACHE_ROOT = os.path.join(tmp, "local_cache")
+ext = os.path.join(tmp, "nas_hdri")
+for sub in ("exterior/day", "exterior/night", "studio", "_skip"):
+    os.makedirs(os.path.join(ext, *sub.split("/")), exist_ok=True)
+for rel in ("exterior/day/field_4k.exr", "exterior/night/street_8k.hdr", "studio/box.exr",
+            "_skip/hidden.exr", "top.exr"):
+    open(os.path.join(ext, *rel.split("/")), "wb").close()
+before = sorted(os.path.relpath(os.path.join(d, f), ext) for d, _, fs in os.walk(ext) for f in fs)
+items = {h.name: h for h in core.list_hdris(ext)}
+check("ext library: sub-folders become groups, _folders skipped",
+      sorted(items) == ["exterior/day/field_4k", "exterior/night/street_8k", "studio/box", "top"]
+      and items["exterior/day/field_4k"].group == "exterior/day" and items["top"].group == "",
+      sorted(items))
+written = []
+library.refresh(_read, _jpg, _exr, folder=ext)
+after = sorted(os.path.relpath(os.path.join(d, f), ext) for d, _, fs in os.walk(ext) for f in fs)
+check("ext library: previews go to the local cache, folder untouched",
+      after == before and len(written) == 8 and all(w.startswith(core.LOCAL_CACHE_ROOT) for w in written))
+h = core.list_hdris(ext)[0]
+check("ext library: cached thumb + bg picked up", h.thumb and h.bg and h.root == ext)
+core.save_sidecar(h.path, {"rotation_offset_deg": 33}, root=h.root)
+after2 = sorted(os.path.relpath(os.path.join(d, f), ext) for d, _, fs in os.walk(ext) for f in fs)
+check("ext library: 'save default' goes to the cache too",
+      after2 == before and core.hdri_from_path(h.path, ext).rotation_offset == 33)
+check("ext library: separate caches per folder",
+      core.library_cache_dir(ext) != core.library_cache_dir(os.path.join(tmp, "other")))
+rt.renderers.current = _renderer("V_Ray_7")
+rt.selection = [asset]
+builder.build(h)
+dome = rt.getNodeByName("LKD_dome")
+check("ext library: rig uses the NAS file directly", dome.texmap.HDRIMapName == h.path)
+builder.set_rotation(10)
+builder.save_hdri_defaults()
+check("ext library: save default from the rig resolves the NAS HDRI",
+      core.hdri_from_path(h.path, ext).rotation_offset == 10 and sorted(
+          os.path.relpath(os.path.join(d, f), ext) for d, _, fs in os.walk(ext) for f in fs) == before)
+builder.remove_rig()
+
 # 9. core: same on-screen ref size regardless of asset scale
 p = core.load_preset()
 sizes = []

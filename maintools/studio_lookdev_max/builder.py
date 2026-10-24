@@ -66,6 +66,8 @@ UP_DIST = "lookdev_distance"           # lens -> asset distance (keeps ref size 
 UP_RADIUS = "lookdev_radius"
 REF_NAMES = (P + "chrome", P + "grey18", P + "chart_board")
 UP_BG_MODE = "lookdev_bg_mode"         # hdri / blur / color
+UP_HDRI_PATH = "lookdev_hdri_path"
+UP_HDRI_ROOT = "lookdev_hdri_root"
 BG_DOME_NAME = P + "dome_bg"
 BG_MODES = ("hdri", "blur", "color")
 
@@ -216,16 +218,33 @@ def _render_aspect():
     return (float(rt.renderWidth) / float(rt.renderHeight)) * float(rt.renderPixelAspect)
 
 
-def _resolve_hdri(hdri):
+def _resolve_hdri(hdri, root=None):
+    """core.HDRI from an HDRI, a file path (any library) or a studio-library name."""
     if isinstance(hdri, core.HDRI):
         return hdri
     if os.path.isfile(str(hdri)):
-        name = os.path.splitext(os.path.basename(hdri))[0]
-        return core.find_hdri(name, os.path.dirname(hdri)) or core.HDRI(name, hdri)
-    found = core.find_hdri(str(hdri))
+        return core.hdri_from_path(str(hdri), root)
+    found = core.find_hdri(str(hdri), root or core.HDRI_DIR)
     if not found:
         raise ValueError("HDRI not found in the library: %s" % hdri)
     return found
+
+
+def _state_hdri():
+    """The rig's current HDRI (by stored path, so HDRIs from any folder work)."""
+    st = _store()
+    path = rt.getUserProp(st, UP_HDRI_PATH)
+    root = rt.getUserProp(st, UP_HDRI_ROOT)
+    root = None if is_undefined(root) or not str(root) else str(root)
+    if not is_undefined(path) and os.path.isfile(str(path)):
+        return core.hdri_from_path(str(path), root)
+    return _resolve_hdri(hdri_state()["hdri"], root)
+
+
+def _tag_hdri(st, hdri):
+    rt.setUserProp(st, core.USER_PROP_HDRI, hdri.name)
+    rt.setUserProp(st, UP_HDRI_PATH, hdri.path)
+    rt.setUserProp(st, UP_HDRI_ROOT, hdri.root)
 
 
 def _ms_str(s):
@@ -392,7 +411,7 @@ def set_background_mode(mode, color=None):
     adapter = adapters.detect()
     bg_path = None
     if mode == "blur":
-        h = _resolve_hdri(hdri_state()["hdri"])
+        h = _state_hdri()
         if not h.bg:
             raise RuntimeError("%s has no blurred background yet — Refresh library" % h.label)
         bg_path = h.bg
@@ -437,7 +456,7 @@ def set_hdri(hdri, keep_adjustments=False):
     preset = core.load_preset("turntable_default" if is_undefined(pname) else str(pname))
     base = hdri.intensity * float(preset["light"].get("intensity", 1.0))
     rt.setUserProp(st, UP_BASE, base)
-    rt.setUserProp(st, core.USER_PROP_HDRI, hdri.name)
+    _tag_hdri(st, hdri)
     if keep_adjustments:
         set_exposure(_prop_float(st, UP_EV, 0.0))
     else:
@@ -461,10 +480,10 @@ def save_hdri_defaults():
     """
     st, _dome = _require_rig()
     state = hdri_state()
-    hdri = _resolve_hdri(state["hdri"])
+    hdri = _state_hdri()
     intensity = hdri.intensity * (2.0 ** state["exposure"])
     core.save_sidecar(hdri.path, {"rotation_offset_deg": round(state["rotation"], 3),
-                                  "intensity": round(intensity, 5)})
+                                  "intensity": round(intensity, 5)}, root=hdri.root)
     pname = rt.getUserProp(st, core.USER_PROP_PRESET)
     preset = core.load_preset("turntable_default" if is_undefined(pname) else str(pname))
     rt.setUserProp(st, UP_BASE, intensity * float(preset["light"].get("intensity", 1.0)))
@@ -807,7 +826,7 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
 
         # HDRI rotation + turntable
         _set_z_rotation(dome.name, hdri.rotation_offset)
-        rt.setUserProp(store, core.USER_PROP_HDRI, hdri.name)
+        _tag_hdri(store, hdri)
         rt.setUserProp(store, UP_ROT, hdri.rotation_offset)
         rt.setUserProp(store, UP_EV, 0.0)
         rt.setUserProp(store, UP_BASE, intensity)

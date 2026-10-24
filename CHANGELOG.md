@@ -1,5 +1,13 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.7 — Lookdev Rig 0.7.0
+- **Any folder as HDRI library** (top bar): pick a collection (e.g. on the NAS) to try HDRIs without copying them, and switch back to the Studio library. Recent folders are remembered. Sub-folders show as a FOLDERS tree in the sidebar and are searchable
+  - Nothing is written into those folders: previews, blurred backgrounds and "Save as HDRI default" go to a local cache (`~/.studio-toolbar/lookdev_cache/`). Only the optional Arnold `.tx` is written next to the source
+  - Refresh library asks before processing a big collection; it can be cancelled and resumed
+  - The rig stores the HDRI's full path, so live controls and Save default work with any library
+- **Right panel tidied:** aligned label / control columns, sections Rig · References · Dome; fixed-height HDRI details (nothing jumps when switching HDRIs), long text elided with full text in the tooltip, wider minimum width (no cut text), value boxes sized to their content and aligned, colour swatch the same height as the Background list
+- `dev/test_lookdev.py`: external library checks (85 checks)
+
 ## v2.8.6 — Lookdev Rig 0.6.0
 - **Delete rig leaves no trace:** the `LOOKDEV_RIG` layer is removed too (after restoring materials and scene background)
 - **Rig layer frozen** so it can't be picked by accident, with *Show Frozen in Gray* off — it stays in colour in the viewport. The tool itself still updates it (refs, dome, background)

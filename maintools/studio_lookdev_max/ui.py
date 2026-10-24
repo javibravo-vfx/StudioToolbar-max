@@ -16,6 +16,7 @@ options are remembered per user in ~/.studio-toolbar/lookdev_rig.ini.
 """
 
 import configparser
+import json
 import os
 
 import pymxs
@@ -61,6 +62,7 @@ QLabel#title {{ color: {seltext}; font-size: 10pt; font-weight: bold; }}
 QLabel#appname {{ color: {seltext}; font-size: 10pt; font-weight: bold; letter-spacing: 1px; }}
 QLabel#badge {{ color: {accent}; border: 1px solid {accentbg}; border-radius: 2px; padding: 1px 6px; }}
 QLabel#badge[error="true"] {{ color: {err}; border-color: #884444; }}
+QLabel#formlabel {{ color: #8a8a8a; }}
 QLabel#section {{ color: {dim}; font-size: 8pt; font-weight: bold; letter-spacing: 1px; }}
 QFrame#topbar {{ background-color: {panel}; border-bottom: 1px solid {border}; }}
 QFrame#statusbar {{ background-color: {status}; border-top: 1px solid {border}; }}
@@ -121,7 +123,10 @@ QToolTip {{ background-color: #2a2a2a; color: {text}; border: 1px solid {border}
            dim=C_TEXT_DIM, selbg=C_SEL_BG, seltext=C_SEL_TEXT, btn=C_BTN, btnho=C_BTN_HO,
            status=C_STATUS, accent=C_ACCENT, accentbg=C_ACCENT_BG, err=C_ERR)
 
-FILTER_ALL, FILTER_MISSING, FILTER_TAG = "all", "missing", "tag:"
+FILTER_ALL, FILTER_MISSING, FILTER_TAG, FILTER_DIR = "all", "missing", "tag:", "dir:"
+FORM_LABEL_W = 82
+RIGHT_MIN_W = 340
+SWATCH_W = 40
 CORNER_LABELS = (("bottom_right", "Bottom right"), ("bottom_left", "Bottom left"),
                  ("top_right", "Top right"), ("top_left", "Top left"))
 
@@ -163,6 +168,11 @@ def save_settings(**values):
             cfg.write(fh)
     except Exception as exc:  # noqa: BLE001
         print("[Lookdev Rig] save settings: %s" % exc)
+
+
+def _short_path(p, keep=2):
+    parts = os.path.normpath(p).split(os.sep)
+    return p if len(parts) <= keep + 1 else os.path.join(parts[0] + os.sep, "…", *parts[-keep:])
 
 
 def _max_main_window():
@@ -234,18 +244,48 @@ class _Preview(QtWidgets.QLabel):
                                             QtCore.Qt.SmoothTransformation))
 
 
+class _ElidedLabel(QtWidgets.QLabel):
+    """One-line label that elides with "…" instead of widening the panel; full text in tooltip."""
+
+    def __init__(self, text="", parent=None):
+        super(_ElidedLabel, self).__init__(parent)
+        self._full = ""
+        self.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Fixed)
+        self.setMinimumWidth(10)
+        self.setText(text)
+
+    def setText(self, text):
+        self._full = text or ""
+        self.setToolTip(self._full if self._full else "")
+        self._elide()
+
+    def text(self):
+        return self._full
+
+    def resizeEvent(self, e):
+        super(_ElidedLabel, self).resizeEvent(e)
+        self._elide()
+
+    def _elide(self):
+        fm = self.fontMetrics()
+        QtWidgets.QLabel.setText(self, fm.elidedText(self._full, QtCore.Qt.ElideRight,
+                                                     max(10, self.width())))
+
+    def sizeHint(self):
+        return QtCore.QSize(10, self.fontMetrics().height() + 2)
+
+
 class _SliderRow(QtWidgets.QWidget):
     """Label + slider + value box, kept in sync. Emits valueChanged(float)."""
     valueChanged = QtCore.Signal(float)
 
-    def __init__(self, label, lo, hi, step, decimals, suffix="", default=0.0, parent=None):
+    def __init__(self, lo, hi, step, decimals, suffix="", default=0.0, parent=None):
         super(_SliderRow, self).__init__(parent)
         self._scale = 10 ** decimals
         self._default = default
         lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lbl = QtWidgets.QLabel(label)
-        lbl.setFixedWidth(76)
+        lay.setSpacing(8)
         self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.slider.setRange(int(lo * self._scale), int(hi * self._scale))
         self.spin = QtWidgets.QDoubleSpinBox()
@@ -253,11 +293,11 @@ class _SliderRow(QtWidgets.QWidget):
         self.spin.setDecimals(decimals)
         self.spin.setSingleStep(step)
         self.spin.setSuffix(suffix)
-        self.spin.setFixedWidth(70)
+        widest = max(("%.*f%s" % (decimals, v, suffix) for v in (lo, hi)), key=len)
+        self.spin.setFixedWidth(self.spin.fontMetrics().horizontalAdvance(widest + "  ") + 16)
         self.spin.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.spin.setToolTip("Double-click the slider to reset")
-        lay.addWidget(lbl)
         lay.addWidget(self.slider, 1)
         lay.addWidget(self.spin)
         self.slider.valueChanged.connect(self._from_slider)
@@ -309,6 +349,14 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self._history = []
         self._thumb = THUMB_DEFAULT
         self._settings = load_settings()
+        self._root = self._settings.get("library") or core.HDRI_DIR
+        if not os.path.isdir(self._root):
+            self._root = core.HDRI_DIR
+        try:
+            self._recent = [p for p in json.loads(self._settings.get("recent_libraries", "[]"))
+                            if isinstance(p, str)]
+        except ValueError:
+            self._recent = []
         self._build_ui()
         self._geom_timer = QtCore.QTimer(self)
         self._geom_timer.setSingleShot(True)
@@ -348,6 +396,15 @@ class LookdevRigDialog(QtWidgets.QDialog):
         name.setObjectName("appname")
         lay.addWidget(name)
         lay.addSpacing(14)
+        self.cmb_library = QtWidgets.QComboBox()
+        self.cmb_library.setMinimumWidth(190)
+        self.cmb_library.setMaximumWidth(320)
+        self.cmb_library.setToolTip("HDRI library: the shared studio one, or any folder (e.g. a\n"
+                                    "collection on the NAS) to try HDRIs without copying them.\n"
+                                    "Previews of other folders are cached locally — the folder is\n"
+                                    "never written to.")
+        self.cmb_library.activated.connect(self._on_library_activated)
+        lay.addWidget(self.cmb_library)
         self.search = QtWidgets.QLineEdit()
         self.search.setPlaceholderText("Search HDRIs, tags…")
         self.search.setClearButtonEnabled(True)
@@ -375,7 +432,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.b_library.setMenu(m)
         lay.addWidget(self.b_library)
         b_folder = QtWidgets.QPushButton("Open folder")
-        b_folder.setToolTip(core.HDRI_DIR)
+        b_folder.setToolTip("Opens the current library folder")
         b_folder.clicked.connect(self.on_open_folder)
         lay.addWidget(b_folder)
         return bar
@@ -405,43 +462,55 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.grid.customContextMenuRequested.connect(self._grid_menu)
         return self.grid
 
+    def _form_label(self, text):
+        lbl = QtWidgets.QLabel(text)
+        lbl.setObjectName("formlabel")
+        lbl.setFixedWidth(FORM_LABEL_W)
+        return lbl
+
     def _build_right(self):
         scroll = QtWidgets.QScrollArea()
         scroll.setObjectName("rightscroll")
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(260)
+        scroll.setMinimumWidth(RIGHT_MIN_W)
         panel = QtWidgets.QWidget()
         panel.setObjectName("rightpanel")
         v = QtWidgets.QVBoxLayout(panel)
-        v.setContentsMargins(12, 12, 12, 12)
-        v.setSpacing(6)
+        v.setContentsMargins(14, 14, 14, 14)
+        v.setSpacing(4)
 
+        # ── HDRI preview + details (fixed height: nothing below jumps) ──
         self.preview = _Preview()
         v.addWidget(self.preview)
-        self.lbl_name = QtWidgets.QLabel()
+        v.addSpacing(6)
+        details = QtWidgets.QWidget()
+        d = QtWidgets.QVBoxLayout(details)
+        d.setContentsMargins(0, 0, 0, 0)
+        d.setSpacing(2)
+        self.lbl_name = _ElidedLabel()
         self.lbl_name.setObjectName("title")
-        v.addWidget(self.lbl_name)
-        self.lbl_info = QtWidgets.QLabel()
-        self.lbl_info.setObjectName("dim")
-        self.lbl_info.setWordWrap(True)
-        v.addWidget(self.lbl_info)
+        d.addWidget(self.lbl_name)
+        self.lbl_info = [_ElidedLabel() for _ in range(3)]
+        for lbl in self.lbl_info:
+            lbl.setObjectName("dim")
+            d.addWidget(lbl)
+        details.setFixedHeight(details.sizeHint().height())
+        v.addWidget(details)
 
-        # RIG
+        # ── RIG ──
         v.addWidget(_section("Rig"))
-        row = QtWidgets.QHBoxLayout()
-        lbl = QtWidgets.QLabel("Preset")
-        lbl.setFixedWidth(76)
-        row.addWidget(lbl)
+        g = self._grid()
         self.cmb_preset = QtWidgets.QComboBox()
         self.cmb_preset.setToolTip("Rig presets (shared\\lookdev\\presets): camera framing, reference sizes,\n"
                                    "turntable length / start frame / direction, ground and clay defaults.\n"
                                    "Applied when the rig is built.")
         self.cmb_preset.currentIndexChanged.connect(lambda *_: self._on_preset_changed(self._preset_id()))
-        row.addWidget(self.cmb_preset, 1)
-        v.addLayout(row)
-        self.chk_turntable = QtWidgets.QCheckBox("Turntable  (object, then HDRI)")
-        self.chk_turntable.setToolTip("Frames from the preset; the asset itself never moves")
+        g.addWidget(self._form_label("Preset"), 0, 0)
+        g.addWidget(self.cmb_preset, 0, 1)
+        self.chk_turntable = QtWidgets.QCheckBox("Turntable")
+        self.chk_turntable.setToolTip("Object turn, then HDRI turn — frames and direction from the preset.\n"
+                                      "The asset itself never moves")
         self.chk_ground = QtWidgets.QCheckBox("Shadow catcher")
         self.chk_ground.setToolTip("Ground plane under the asset that only shows shadows")
         self.chk_clay = QtWidgets.QCheckBox("Clay  (grey override, live)")
@@ -449,19 +518,37 @@ class LookdevRigDialog(QtWidgets.QDialog):
                                  "Turning it off puts the originals back — material edits made\n"
                                  "while clay is on are discarded.")
         self.chk_clay.toggled.connect(self.on_clay)
+        g.addWidget(self._form_label("Options"), 1, 0, QtCore.Qt.AlignTop)
+        opts = QtWidgets.QVBoxLayout()
+        opts.setSpacing(4)
         for w in (self.chk_turntable, self.chk_ground, self.chk_clay):
-            v.addWidget(w)
+            opts.addWidget(w)
             w.toggled.connect(lambda *_: self._save_options())
-        self.lbl_camera = QtWidgets.QLabel()
+        g.addLayout(opts, 1, 1)
+        self.lbl_camera = _ElidedLabel()
         self.lbl_camera.setObjectName("dim")
-        self.lbl_camera.setWordWrap(True)
-        v.addWidget(self.lbl_camera)
+        g.addWidget(self._form_label("Camera"), 2, 0)
+        g.addWidget(self.lbl_camera, 2, 1)
+        v.addLayout(g)
+        v.addSpacing(6)
+        brow = QtWidgets.QHBoxLayout()
+        brow.setSpacing(6)
+        self.b_build = QtWidgets.QPushButton("Build / update rig")
+        self.b_build.setObjectName("primary")
+        self.b_build.setToolTip("Builds the rig around the selection (double-click an HDRI does the same)")
+        self.b_build.clicked.connect(self.on_build)
+        b_remove = QtWidgets.QPushButton("Delete rig")
+        b_remove.setToolTip("Deletes the rig and its layer; restores materials and scene background")
+        b_remove.clicked.connect(self.on_remove)
+        brow.addWidget(self.b_build, 1)
+        brow.addWidget(b_remove)
+        v.addLayout(brow)
 
-        # references (live on the rig)
+        # ── REFERENCES ──
+        v.addWidget(_section("References"))
+        g = self._grid()
         row = QtWidgets.QHBoxLayout()
-        lbl = QtWidgets.QLabel("Refs")
-        lbl.setFixedWidth(76)
-        row.addWidget(lbl)
+        row.setSpacing(12)
         self.chk_chrome = QtWidgets.QCheckBox("Chrome")
         self.chk_grey = QtWidgets.QCheckBox("Grey")
         self.chk_chart = QtWidgets.QCheckBox("Chart")
@@ -471,47 +558,38 @@ class LookdevRigDialog(QtWidgets.QDialog):
             c.toggled.connect(lambda *_: self.on_refs_changed())
             row.addWidget(c)
         row.addStretch(1)
-        v.addLayout(row)
-        row = QtWidgets.QHBoxLayout()
-        lbl = QtWidgets.QLabel("Corner")
-        lbl.setFixedWidth(76)
-        row.addWidget(lbl)
+        g.addWidget(self._form_label("Show"), 0, 0)
+        g.addLayout(row, 0, 1)
         self.cmb_corner = QtWidgets.QComboBox()
         for key, text in CORNER_LABELS:
             self.cmb_corner.addItem(text, key)
         self.cmb_corner.currentIndexChanged.connect(lambda *_: self.on_refs_changed())
-        row.addWidget(self.cmb_corner, 1)
-        v.addLayout(row)
-        row = QtWidgets.QHBoxLayout()
-        lbl = QtWidgets.QLabel("Chart")
-        lbl.setFixedWidth(76)
-        row.addWidget(lbl)
+        g.addWidget(self._form_label("Corner"), 1, 0)
+        g.addWidget(self.cmb_corner, 1, 1)
         self.cmb_chart = QtWidgets.QComboBox()
         self.cmb_chart.setToolTip("Chart definitions in shared\\lookdev\\reference\\ "
                                   "(see _TEMPLATE_chart.json to add one)")
         self.cmb_chart.currentIndexChanged.connect(lambda *_: self.on_refs_changed())
-        row.addWidget(self.cmb_chart, 1)
-        v.addLayout(row)
-        brow = QtWidgets.QHBoxLayout()
-        self.b_build = QtWidgets.QPushButton("Build / update rig")
-        self.b_build.setObjectName("primary")
-        self.b_build.setToolTip("Builds the rig around the selection (double-click an HDRI does the same)")
-        self.b_build.clicked.connect(self.on_build)
-        b_remove = QtWidgets.QPushButton("Delete rig")
-        b_remove.setToolTip("Deletes every LKD_ node and restores the asset materials")
-        b_remove.clicked.connect(self.on_remove)
-        brow.addWidget(self.b_build, 1)
-        brow.addWidget(b_remove)
-        v.addLayout(brow)
+        g.addWidget(self._form_label("Chart"), 2, 0)
+        g.addWidget(self.cmb_chart, 2, 1)
+        v.addLayout(g)
 
-        # DOME · LIVE
+        # ── DOME · LIVE ──
         v.addWidget(_section("Dome · live"))
-        self.row_rot = _SliderRow("Rotation", -180.0, 180.0, 1.0, 1, "°")
+        g = self._grid()
+        self.row_rot = _SliderRow(-180.0, 180.0, 1.0, 1, "°")
         self.row_rot.setToolTip("HDRI rotation; the turntable spin is added on top")
         self.row_rot.valueChanged.connect(self.on_rotation)
-        self.row_ev = _SliderRow("Exposure", -5.0, 5.0, 0.1, 2, " EV")
+        self.row_ev = _SliderRow(-5.0, 5.0, 0.1, 2, " EV")
         self.row_ev.setToolTip("Dome intensity in stops over the HDRI default")
         self.row_ev.valueChanged.connect(self.on_exposure)
+        g.addWidget(self._form_label("Rotation"), 0, 0)
+        g.addWidget(self.row_rot, 0, 1)
+        w = max(self.row_rot.spin.maximumWidth(), self.row_ev.spin.maximumWidth())
+        for r in (self.row_rot, self.row_ev):
+            r.spin.setFixedWidth(w)                 # value boxes line up
+        g.addWidget(self._form_label("Exposure"), 1, 0)
+        g.addWidget(self.row_ev, 1, 1)
         self.cmb_bg = QtWidgets.QComboBox()
         for key, text in (("hdri", "HDRI"), ("blur", "Blurred HDRI"), ("color", "Colour")):
             self.cmb_bg.addItem(text, key)
@@ -521,31 +599,40 @@ class LookdevRigDialog(QtWidgets.QDialog):
                                "Colour: flat colour; alpha stays clean for comp")
         self.cmb_bg.currentIndexChanged.connect(lambda *_: self.on_background_mode())
         self.b_bg_color = QtWidgets.QToolButton()
-        self.b_bg_color.setFixedSize(40, 22)
         self.b_bg_color.setToolTip("Background colour (Colour mode)")
         self.b_bg_color.clicked.connect(self.on_pick_bg_color)
+        self.b_bg_color.setFixedSize(SWATCH_W, self.cmb_bg.sizeHint().height())
         self._bg_color = (0.18, 0.18, 0.18)
         bg_row = QtWidgets.QHBoxLayout()
-        lbl = QtWidgets.QLabel("Background")
-        lbl.setFixedWidth(76)
-        bg_row.addWidget(lbl)
+        bg_row.setSpacing(6)
         bg_row.addWidget(self.cmb_bg, 1)
-        bg_row.addWidget(self.b_bg_color)
+        bg_row.addWidget(self.b_bg_color, 0, QtCore.Qt.AlignVCenter)
+        g.addWidget(self._form_label("Background"), 2, 0)
+        g.addLayout(bg_row, 2, 1)
+        v.addLayout(g)
+        v.addSpacing(6)
         self.b_save_default = QtWidgets.QPushButton("Save as HDRI default")
-        self.b_save_default.setToolTip("Writes rotation and intensity to the HDRI .json sidecar —\n"
-                                       "every toolbar (Max, Houdini, Blender, Maya) starts there")
+        self.b_save_default.setToolTip("Writes rotation and intensity as this HDRI's default\n"
+                                       "(studio library: shared .json sidecar, read by every toolbar;\n"
+                                       " other folders: local cache, the collection is never touched)")
         self.b_save_default.clicked.connect(self.on_save_default)
-        self.lbl_live = QtWidgets.QLabel()
+        v.addWidget(self.b_save_default)
+        self.lbl_live = _ElidedLabel()
         self.lbl_live.setObjectName("dim")
-        v.addWidget(self.row_rot)
-        v.addWidget(self.row_ev)
-        v.addLayout(bg_row)
-        for w in (self.b_save_default, self.lbl_live):
-            v.addWidget(w)
+        v.addWidget(self.lbl_live)
         self._paint_bg_button()
         v.addStretch(1)
         scroll.setWidget(panel)
         return scroll
+
+    def _grid(self):
+        g = QtWidgets.QGridLayout()
+        g.setContentsMargins(0, 2, 0, 0)
+        g.setHorizontalSpacing(8)
+        g.setVerticalSpacing(6)
+        g.setColumnMinimumWidth(0, FORM_LABEL_W)
+        g.setColumnStretch(1, 1)
+        return g
 
     def _build_statusbar(self):
         bar = QtWidgets.QFrame()
@@ -737,7 +824,8 @@ class LookdevRigDialog(QtWidgets.QDialog):
             i = self.cmb_chart.findData(cur_chart)
             self.cmb_chart.setCurrentIndex(max(0, i))
 
-            self._hdris = core.list_hdris()
+            self._fill_library_combo()
+            self._hdris = core.list_hdris(self._root)
             self._fill_sidebar()
             self.grid.clear()
             for h in self._hdris:
@@ -750,7 +838,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
                 it.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
                 self.grid.addItem(it)
             if not self._hdris:
-                self._status("No HDRIs in %s" % core.HDRI_DIR, C_WARN)
+                self._status("No HDRIs in %s" % self._root, C_WARN)
             else:
                 missing = sum(1 for h in self._hdris if not h.thumb)
                 if missing:
@@ -785,6 +873,19 @@ class LookdevRigDialog(QtWidgets.QDialog):
         missing = sum(1 for h in self._hdris if not h.thumb)
         if missing:
             add("Missing preview", FILTER_MISSING, missing)
+        groups = {}
+        for h in self._hdris:
+            parts = h.group.split("/") if h.group else []
+            for i in range(1, len(parts) + 1):
+                g = "/".join(parts[:i])
+                groups[g] = groups.get(g, 0) + 1
+        if groups:
+            add("", None, selectable=False)
+            add("FOLDERS", None, selectable=False)
+            for g in sorted(groups, key=str.lower):
+                depth = g.count("/")
+                it = add("    " * depth + g.split("/")[-1], FILTER_DIR + g, groups[g])
+                it.setToolTip(g)
         tags = {}
         for h in self._hdris:
             for t in h.meta.get("tags") or []:
@@ -820,8 +921,12 @@ class LookdevRigDialog(QtWidgets.QDialog):
                 ok = not h.thumb
             elif ok and key and key.startswith(FILTER_TAG):
                 ok = key[len(FILTER_TAG):] in [str(t) for t in h.meta.get("tags") or []]
+            elif ok and key and key.startswith(FILTER_DIR):
+                g = key[len(FILTER_DIR):]
+                ok = h.group == g or h.group.startswith(g + "/")
             if ok and text:
-                hay = " ".join([h.name, h.label] + [str(t) for t in h.meta.get("tags") or []]).lower()
+                hay = " ".join([h.name, h.label, h.group]
+                               + [str(t) for t in h.meta.get("tags") or []]).lower()
                 ok = all(word in hay for word in text.split())
             item.setHidden(not ok)
             shown += ok
@@ -838,15 +943,18 @@ class LookdevRigDialog(QtWidgets.QDialog):
         if h is None:
             self.preview.set_source(None)
             self.lbl_name.setText("")
-            self.lbl_info.setText("")
+            for lbl in self.lbl_info:
+                lbl.setText("")
             return
         self.preview.set_source(QtGui.QPixmap(h.thumb) if h.thumb else None)
         self.lbl_name.setText(h.label)
-        bits = ["Default rotation %.1f°  ·  intensity %.2f" % (h.rotation_offset, h.intensity)]
-        if h.meta.get("tags"):
-            bits.append("Tags: " + ", ".join(str(t) for t in h.meta["tags"]))
-        bits.append(os.path.basename(h.path) + ("  ·  blurred bg ready" if h.bg else ""))
-        self.lbl_info.setText("\n".join(bits))
+        where = h.group or "(top level)"
+        tags = ", ".join(str(t) for t in h.meta.get("tags") or [])
+        lines = ["Rotation %.1f°   ·   intensity %.2f" % (h.rotation_offset, h.intensity),
+                 "Folder: %s" % where + ("   ·   Tags: %s" % tags if tags else ""),
+                 os.path.basename(h.path) + ("   ·   blurred bg ready" if h.bg else "   ·   no blurred bg")]
+        for lbl, text in zip(self.lbl_info, lines):
+            lbl.setText(text)
 
     def _sync_live(self):
         """Live controls follow the built rig; disabled when there is none."""
@@ -889,12 +997,12 @@ class LookdevRigDialog(QtWidgets.QDialog):
     def _update_camera_label(self):
         _geo, cam = builder._split_selection(list(rt.selection))
         if cam is not None:
-            self.lbl_camera.setText("Camera: copy of %s" % cam.name)
-            self.lbl_camera.setToolTip("A camera is selected with the asset: the rig uses its framing")
+            self.lbl_camera.setText("Copy of %s" % cam.name)
+            self.lbl_camera.setToolTip("A camera is selected with the asset: the rig copies its "
+                                       "framing (the original is never moved)")
         else:
-            self.lbl_camera.setText("Camera: automatic framing  (select a camera with the asset "
-                                    "to use its framing)")
-            self.lbl_camera.setToolTip("")
+            self.lbl_camera.setText("Automatic framing")
+            self.lbl_camera.setToolTip("Select a camera together with the asset to use its framing")
 
     def _sync_clay(self):
         self.chk_clay.blockSignals(True)
@@ -1103,10 +1211,18 @@ class LookdevRigDialog(QtWidgets.QDialog):
         if make_tx and not library_max.find_maketx():
             self._status("maketx not found (Arnold) — previews only", C_WARN)
             make_tx = False
-        jobs = library_max.pending(want_tx=make_tx, force=force)
+        jobs = library_max.pending(want_tx=make_tx, force=force, folder=self._root)
         if not jobs:
             self._status("Library up to date", C_OK)
             return
+        if not core.is_default_library(self._root) and len(jobs) > 20:
+            r = QtWidgets.QMessageBox.question(
+                self, "Refresh library",
+                "Generate previews for %d HDRIs in\n%s ?\n\nIt can take a while (each HDRI is read "
+                "once). Previews go to your local cache; the folder itself is not modified.\n"
+                "You can cancel at any time and continue later." % (len(jobs), self._root))
+            if r != QtWidgets.QMessageBox.Yes:
+                return
         dlg = QtWidgets.QProgressDialog("Preparing…", "Cancel", 0, len(jobs), self)
         dlg.setWindowTitle("Refresh library")
         dlg.setWindowModality(QtCore.Qt.WindowModal)
@@ -1119,7 +1235,8 @@ class LookdevRigDialog(QtWidgets.QDialog):
             QtWidgets.QApplication.processEvents()
             return not dlg.wasCanceled()
 
-        report = library_max.refresh(make_tx=make_tx, force=force, progress=progress)
+        report = library_max.refresh(make_tx=make_tx, force=force, progress=progress,
+                                     folder=self._root)
         dlg.close()
         self.refresh()
         if report.errors:
@@ -1131,10 +1248,73 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self._status("Library: %d updated" % len(report.done), C_OK)
 
     def on_open_folder(self):
-        if os.path.isdir(core.HDRI_DIR):
-            os.startfile(core.HDRI_DIR)
+        if os.path.isdir(self._root):
+            os.startfile(self._root)
         else:
-            self._status("Folder not found: %s" % core.HDRI_DIR, C_ERR)
+            self._status("Folder not found: %s" % self._root, C_ERR)
+
+    # -- libraries ----------------------------------------------------------
+
+    def _fill_library_combo(self):
+        cb = self.cmb_library
+        cb.blockSignals(True)
+        cb.clear()
+        cb.addItem("Studio library", core.HDRI_DIR)
+        cb.setItemData(0, core.HDRI_DIR, QtCore.Qt.ToolTipRole)
+        for p in self._recent:
+            if not core.is_default_library(p):
+                cb.addItem(_short_path(p), p)
+                cb.setItemData(cb.count() - 1, p, QtCore.Qt.ToolTipRole)
+        cb.insertSeparator(cb.count())
+        cb.addItem("Browse folder…", "__browse__")
+        if self._recent:
+            cb.addItem("Clear recent folders", "__clear__")
+        i = cb.findData(self._root)
+        if i < 0:
+            cb.insertItem(1, _short_path(self._root), self._root)
+            i = 1
+        cb.setCurrentIndex(i)
+        cb.blockSignals(False)
+
+    def _on_library_activated(self, index):
+        data = self.cmb_library.itemData(index)
+        if data == "__browse__":
+            start = self._root if not core.is_default_library(self._root) else \
+                (self._recent[0] if self._recent else "")
+            folder = QtWidgets.QFileDialog.getExistingDirectory(self, "HDRI folder", start)
+            if folder:
+                self.set_library(folder)
+            else:
+                self._fill_library_combo()
+            return
+        if data == "__clear__":
+            self._recent = []
+            save_settings(recent_libraries="[]")
+            self._fill_library_combo()
+            return
+        if data and data != self._root:
+            self.set_library(data)
+
+    def set_library(self, folder):
+        folder = os.path.normpath(folder)
+        if not os.path.isdir(folder):
+            self._status("Folder not found: %s" % folder, C_ERR)
+            return
+        self._root = folder
+        if not core.is_default_library(folder):
+            self._recent = [folder] + [p for p in self._recent
+                                       if os.path.normcase(p) != os.path.normcase(folder)]
+            self._recent = self._recent[:8]
+        save_settings(library=folder, recent_libraries=json.dumps(self._recent), filter=FILTER_ALL)
+        self.sidebar.setCurrentRow(0)
+        self.search.clear()
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            self.refresh()
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        name = "Studio library" if core.is_default_library(folder) else folder
+        self._status("Library: %s  ·  %d HDRIs" % (name, len(self._hdris)), C_OK)
 
     def on_build(self):
         hdri = self._current_hdri()

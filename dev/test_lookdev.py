@@ -104,7 +104,7 @@ rt.Sphere = _node_class("Sphere", GEO, ("radius", "segs"))
 rt.Plane = _node_class("Plane", GEO, ("width", "length", "widthsegs", "lengthsegs"))
 rt.Box = _node_class("Box", GEO)
 rt.VRayLight = _node_class("VRayLight", LIGHT, ("type", "dome_spherical", "texmap", "texmap_on",
-                                                "multiplier", "invisible"))
+                                                "multiplier", "invisible", "texmap_locktolight"))
 rt.Arnold_Light = _node_class("Arnold_Light", LIGHT, ("shapeType", "texmap", "texmapOn",
                                                       "useColor", "intensity", "exposure", "camera"))
 rt.VRayBitmap = _mtl_class("VRayBitmap", ("HDRIMapName", "mapType", "horizontalRotation"))
@@ -261,6 +261,7 @@ check("build: no warnings / missing props", not rig["warnings"] and not rig["log
 dome = rt.getNodeByName("LKD_dome")
 check("dome: V-Ray dome with HDRI", dome.type == 1 and dome.texmap.HDRIMapName.endswith("studio_a.exr"))
 check("dome: sidecar intensity", dome.multiplier == 2.0)
+check("dome: V-Ray texture locked to icon (rotates with the node)", dome.texmap_locktolight is True)
 ground = rt.getNodeByName("LKD_shadow_catcher")
 check("ground: at the asset base", abs(ground.position.z - 0.0) < 1e-6, ground.position.z)
 check("ground: V-Ray matte wrapper, no shadow cast",

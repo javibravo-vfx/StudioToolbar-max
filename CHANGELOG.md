@@ -1,5 +1,13 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.4 — Lookdev Rig 0.4.0
+- **Fix (V-Ray): the dome didn't rotate.** "Lock texture to icon" is now ticked on `LKD_dome` at build; without it the HDRI stays fixed in world space and neither the Rotation slider nor the HDRI turntable did anything. If a V-Ray build names the option differently, the window says so
+- **New layout, Studio Library style** (same palette as StudioLibrary MAX): top bar with search (name / label / tags), renderer badge, Refresh library, Open folder · sidebar with All / Missing preview / tags from the sidecars · thumbnail grid · right panel · status bar
+- **Resizable thumbnails:** size slider in the status bar or Ctrl + mouse wheel on the grid (96–512 px); never wider than the grid. Panels resizable with splitters; the preview scales with the right panel
+- **Rig options moved to the right panel** (Preset, Turntable, Shadow catcher, Clay, Build / Delete) above the live dome controls
+- **Remembers** window position and size, panel sizes, thumbnail size, sidebar filter, preset, last HDRI and rig options (`~/.studio-toolbar/lookdev_rig.ini`); re-centred if that monitor is gone
+- Status bar with coloured result dot; click it for the message history. Right-click an HDRI: Build rig / Use on the rig / Show in folder. Double-click a slider resets it
+
 ## v2.8.3 — Lookdev Rig 0.3.0
 - **Live dome controls** (right panel, act on the built rig without rebuilding): pick another HDRI in the grid and only the dome texture is swapped; Rotation, Exposure (EV) and "Background visible in render" (off = dome still lights, render gets alpha)
 - **Save as HDRI default:** writes the current rotation and intensity into the HDRI `.json` sidecar in the shared library, so every toolbar (Max, Houdini, Blender, Maya) starts from them

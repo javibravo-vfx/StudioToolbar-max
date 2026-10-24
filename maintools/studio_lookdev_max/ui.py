@@ -1,13 +1,21 @@
 """
-Lookdev Rig — dialog opened from the Studio Toolbar (Lookdev button).
+Lookdev Rig — window opened from the Studio Toolbar (Lookdev button).
 
     from studio_lookdev_max import ui
     ui.show()
 
-Left: HDRI library grid. Right: big preview and live dome controls (rotation, exposure,
-background) that act on the built rig without rebuilding it.
+Layout in the spirit of Studio Library:
+    top bar      search · renderer · refresh library · open folder
+    sidebar      All / Missing preview / tags from the sidecars
+    grid         HDRI thumbnails — size from the slider or Ctrl + mouse wheel
+    right panel  preview (scales with the panel), RIG options, DOME · LIVE controls
+    status bar   last message (click for history) · thumbnail size
+
+Window position / size, panel sizes, thumbnail size, filter, preset, last HDRI and the rig
+options are remembered per user in ~/.studio-toolbar/lookdev_rig.ini.
 """
 
+import configparser
 import os
 
 import pymxs
@@ -23,46 +31,119 @@ from .builder import core
 rt = pymxs.runtime
 
 _INSTANCE = None
-GRID_THUMB = QtCore.QSize(128, 64)
-PREVIEW = QtCore.QSize(300, 150)
+
+SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".studio-toolbar", "lookdev_rig.ini")
+
+THUMB_MIN, THUMB_MAX, THUMB_DEFAULT = 96, 512, 176
+
+# ── palette (shared with StudioLibrary MAX) ──────────────────────────────────
+C_BG = "#1C1C1C"
+C_PANEL = "#232323"
+C_BORDER = "#2E2E2E"
+C_BORDER_HI = "#484848"
+C_TEXT = "#C8C8C8"
+C_TEXT_DIM = "#666666"
+C_SEL_BG = "#303030"
+C_SEL_TEXT = "#E8E8E8"
+C_BTN = "#2A2A2A"
+C_BTN_HO = "#353535"
+C_STATUS = "#1A1A1A"
+C_ACCENT = "#4ec9c9"
+C_ACCENT_BG = "#2f7f8f"
+C_OK, C_WARN, C_ERR = "#70aa70", "#d4b44a", "#e06060"
 
 STYLE = """
-QDialog { background-color: #3c3c3c; color: #d8d8d8;
-          font-family: "Tahoma","Segoe UI",sans-serif; font-size: 9pt; }
-QLabel { color: #d8d8d8; background: transparent; }
-QLabel#dim { color: #8a8a8a; }
-QLabel#title { font-weight: bold; }
-QLabel#preview { background-color: #262626; border: 1px solid #262626; }
-QGroupBox { border: 1px solid #2c2c2c; border-radius: 2px; margin-top: 14px; padding: 6px; }
-QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; color: #8a8a8a;
-                   font-weight: bold; }
-QListWidget, QPlainTextEdit { background-color: #2b2b2b; color: #d8d8d8;
-          border: 1px solid #262626; }
-QListWidget::item { padding: 3px; }
-QListWidget::item:selected { background-color: #24404a; color: #ffffff; }
-QComboBox, QPushButton, QToolButton {
-          background-color: #484848; color: #d8d8d8;
-          border: 1px solid #262626; border-radius: 1px; padding: 3px 8px; min-height: 18px; }
-QDoubleSpinBox { padding-right: 4px; background-color: #2b2b2b; color: #d8d8d8;
-          border: 1px solid #262626; border-radius: 1px; min-height: 18px; }
-QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
-          subcontrol-origin: border; width: 0px; height: 0px; border: none; }
-QDoubleSpinBox QLineEdit { color: #d8d8d8; background: transparent;
-          selection-background-color: #24404a; }
-QPushButton:hover, QComboBox:hover, QToolButton:hover { background-color: #555555;
-          border-color: #707070; }
-QPushButton:pressed, QToolButton:pressed { background-color: #2f2f2f; }
-QPushButton#primary { background-color: #2f5560; border-color: #3f8a9a; color: #ffffff; }
-QPushButton#primary:hover { background-color: #3a6a77; }
-QPushButton:disabled, QToolButton:disabled, QDoubleSpinBox:disabled { color: #6a6a6a; }
-QToolButton::menu-button { border-left: 1px solid #262626; width: 14px; }
-QSlider::groove:horizontal { height: 4px; background: #2b2b2b; border-radius: 2px; }
-QSlider::handle:horizontal { background: #9a9a9a; width: 10px; margin: -5px 0; border-radius: 2px; }
-QSlider::handle:horizontal:disabled { background: #5a5a5a; }
-QCheckBox { color: #d8d8d8; }
-QMenu { background-color: #323232; color: #d8d8d8; border: 1px solid #262626; }
-QMenu::item:selected { background-color: #24404a; }
-"""
+QDialog {{ background-color: {bg}; color: {text};
+          font-family: "Segoe UI","Tahoma",sans-serif; font-size: 9pt; }}
+QLabel {{ color: {text}; background: transparent; }}
+QLabel#dim {{ color: {dim}; }}
+QLabel#title {{ color: {seltext}; font-size: 10pt; font-weight: bold; }}
+QLabel#appname {{ color: {seltext}; font-size: 10pt; font-weight: bold; letter-spacing: 1px; }}
+QLabel#badge {{ color: {accent}; border: 1px solid {accentbg}; border-radius: 2px; padding: 1px 6px; }}
+QLabel#badge[error="true"] {{ color: {err}; border-color: #884444; }}
+QLabel#section {{ color: {dim}; font-size: 8pt; font-weight: bold; letter-spacing: 1px; }}
+QFrame#topbar {{ background-color: {panel}; border-bottom: 1px solid {border}; }}
+QFrame#statusbar {{ background-color: {status}; border-top: 1px solid {border}; }}
+QFrame#sep {{ background-color: {border}; max-height: 1px; min-height: 1px; border: none; }}
+QWidget#rightpanel, QScrollArea#rightscroll {{ background-color: {panel}; border: none; }}
+QLineEdit {{ background-color: {bg}; color: {text}; border: 1px solid {border};
+            border-radius: 2px; padding: 3px 6px; selection-background-color: {accentbg}; }}
+QLineEdit:focus {{ border-color: {borderhi}; }}
+QListWidget {{ background-color: {bg}; color: {text}; border: none; outline: none; }}
+QListWidget#sidebar {{ background-color: {panel}; padding-top: 4px; }}
+QListWidget#sidebar::item {{ padding: 4px 10px; }}
+QListWidget#sidebar::item:selected {{ background-color: {selbg}; color: {seltext};
+            border-left: 2px solid {accent}; }}
+QListWidget#grid {{ padding: 8px; }}
+QListWidget#grid::item {{ color: {text}; border-radius: 2px; }}
+QListWidget#grid::item:hover {{ background-color: #262626; }}
+QListWidget#grid::item:selected {{ background-color: {selbg}; color: {seltext};
+            border: 1px solid {accentbg}; }}
+QComboBox, QPushButton, QToolButton {{ background-color: {btn}; color: {text};
+            border: 1px solid {border}; border-radius: 2px; padding: 4px 10px; min-height: 16px; }}
+QComboBox:hover, QPushButton:hover, QToolButton:hover {{ background-color: {btnho};
+            border-color: {borderhi}; }}
+QPushButton:pressed, QToolButton:pressed {{ background-color: #202020; }}
+QPushButton#primary {{ background-color: {accentbg}; border-color: {accent}; color: #ffffff;
+            font-weight: bold; }}
+QPushButton#primary:hover {{ background-color: #36909f; }}
+QPushButton:disabled, QToolButton:disabled {{ color: #4a4a4a; border-color: #262626; }}
+QToolButton::menu-button {{ border-left: 1px solid {border}; width: 14px; }}
+QComboBox QAbstractItemView {{ background-color: {panel}; color: {text};
+            selection-background-color: {selbg}; border: 1px solid {border}; }}
+QDoubleSpinBox {{ padding-right: 4px; background-color: {bg}; color: {text};
+            border: 1px solid {border}; border-radius: 2px; min-height: 18px; }}
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+            subcontrol-origin: border; width: 0px; height: 0px; border: none; }}
+QDoubleSpinBox:disabled {{ color: #4a4a4a; }}
+QSlider::groove:horizontal {{ height: 3px; background: {border}; border-radius: 1px; }}
+QSlider::sub-page:horizontal {{ background: #3d6d75; border-radius: 1px; }}
+QSlider::handle:horizontal {{ background: #a0a0a0; width: 10px; margin: -5px 0; border-radius: 5px; }}
+QSlider::handle:horizontal:hover {{ background: {seltext}; }}
+QSlider::handle:horizontal:disabled {{ background: #444444; }}
+QSlider::sub-page:horizontal:disabled {{ background: {border}; }}
+QCheckBox {{ color: {text}; spacing: 6px; }}
+QCheckBox:disabled {{ color: #4a4a4a; }}
+QCheckBox::indicator {{ width: 12px; height: 12px; border: 1px solid {borderhi};
+            border-radius: 2px; background: {bg}; }}
+QCheckBox::indicator:checked {{ background: {accentbg}; border-color: {accent}; }}
+QSplitter::handle {{ background-color: {border}; }}
+QSplitter::handle:horizontal {{ width: 2px; }}
+QScrollBar:vertical {{ background: {bg}; width: 10px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: #3a3a3a; min-height: 24px; border-radius: 4px; margin: 2px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+QMenu {{ background-color: {panel}; color: {text}; border: 1px solid {border}; }}
+QMenu::item {{ padding: 5px 20px 5px 10px; }}
+QMenu::item:selected {{ background-color: {selbg}; color: {seltext}; }}
+QMenu::separator {{ height: 1px; background: {border}; margin: 3px 6px; }}
+QToolTip {{ background-color: #2a2a2a; color: {text}; border: 1px solid {border}; padding: 3px 6px; }}
+""".format(bg=C_BG, panel=C_PANEL, border=C_BORDER, borderhi=C_BORDER_HI, text=C_TEXT,
+           dim=C_TEXT_DIM, selbg=C_SEL_BG, seltext=C_SEL_TEXT, btn=C_BTN, btnho=C_BTN_HO,
+           status=C_STATUS, accent=C_ACCENT, accentbg=C_ACCENT_BG, err=C_ERR)
+
+FILTER_ALL, FILTER_MISSING, FILTER_TAG = "all", "missing", "tag:"
+
+
+# ── settings ─────────────────────────────────────────────────────────────────
+def load_settings():
+    cfg = configparser.ConfigParser()
+    cfg.read(SETTINGS_PATH, encoding="utf-8")
+    return dict(cfg["window"]) if "window" in cfg else {}
+
+
+def save_settings(**values):
+    try:
+        cfg = configparser.ConfigParser()
+        cfg.read(SETTINGS_PATH, encoding="utf-8")
+        if "window" not in cfg:
+            cfg["window"] = {}
+        for k, v in values.items():
+            cfg["window"][k] = "" if v is None else str(v)
+        os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as fh:
+            cfg.write(fh)
+    except Exception as exc:  # noqa: BLE001
+        print("[Lookdev Rig] save settings: %s" % exc)
 
 
 def _max_main_window():
@@ -73,35 +154,79 @@ def _max_main_window():
         return None
 
 
-def _placeholder(size, text):
-    pm = QtGui.QPixmap(size)
-    pm.fill(QtGui.QColor(45, 45, 48))
+def _placeholder(w, h, text):
+    pm = QtGui.QPixmap(w, h)
+    pm.fill(QtGui.QColor("#262626"))
     p = QtGui.QPainter(pm)
-    p.setPen(QtGui.QColor(130, 130, 130))
+    p.setPen(QtGui.QColor("#555555"))
     p.drawText(pm.rect(), QtCore.Qt.AlignCenter | QtCore.Qt.TextWordWrap, text)
     p.end()
     return pm
 
 
-def _thumb_pixmap(h, size):
-    if h.thumb:
-        pm = QtGui.QPixmap(h.thumb)
-        if not pm.isNull():
-            return pm.scaled(size, QtCore.Qt.IgnoreAspectRatio, QtCore.Qt.SmoothTransformation)
-    return _placeholder(size, "no preview\nRefresh library")
+def _sep():
+    f = QtWidgets.QFrame()
+    f.setObjectName("sep")
+    return f
+
+
+def _section(text):
+    w = QtWidgets.QWidget()
+    lay = QtWidgets.QHBoxLayout(w)
+    lay.setContentsMargins(0, 10, 0, 2)
+    lbl = QtWidgets.QLabel(text.upper())
+    lbl.setObjectName("section")
+    lay.addWidget(lbl)
+    line = _sep()
+    lay.addWidget(line, 1)
+    lay.setAlignment(line, QtCore.Qt.AlignVCenter)
+    return w
+
+
+# ── widgets ──────────────────────────────────────────────────────────────────
+class _Preview(QtWidgets.QLabel):
+    """Lat-long preview that always fills the panel width at 2:1."""
+
+    def __init__(self, parent=None):
+        super(_Preview, self).__init__(parent)
+        self._src = None
+        self.setAlignment(QtCore.Qt.AlignCenter)
+        self.setMinimumWidth(200)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.setStyleSheet("background-color: #262626; border: 1px solid %s;" % C_BORDER)
+
+    def set_source(self, pixmap):
+        self._src = pixmap
+        self._update()
+
+    def resizeEvent(self, e):
+        super(_Preview, self).resizeEvent(e)
+        self._update()
+
+    def _update(self):
+        w = max(1, self.width())
+        h = max(1, w // 2)
+        if self.height() != h:
+            self.setFixedHeight(h)
+        if self._src is None or self._src.isNull():
+            self.setPixmap(_placeholder(w - 2, h - 2, "No preview"))
+        else:
+            self.setPixmap(self._src.scaled(w - 2, h - 2, QtCore.Qt.IgnoreAspectRatio,
+                                            QtCore.Qt.SmoothTransformation))
 
 
 class _SliderRow(QtWidgets.QWidget):
-    """Label + slider + spinbox, kept in sync. Emits valueChanged(float)."""
+    """Label + slider + value box, kept in sync. Emits valueChanged(float)."""
     valueChanged = QtCore.Signal(float)
 
-    def __init__(self, label, lo, hi, step, decimals, suffix="", parent=None):
+    def __init__(self, label, lo, hi, step, decimals, suffix="", default=0.0, parent=None):
         super(_SliderRow, self).__init__(parent)
         self._scale = 10 ** decimals
+        self._default = default
         lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lbl = QtWidgets.QLabel(label)
-        lbl.setFixedWidth(62)
+        lbl.setFixedWidth(64)
         self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.slider.setRange(int(lo * self._scale), int(hi * self._scale))
         self.spin = QtWidgets.QDoubleSpinBox()
@@ -109,14 +234,23 @@ class _SliderRow(QtWidgets.QWidget):
         self.spin.setDecimals(decimals)
         self.spin.setSingleStep(step)
         self.spin.setSuffix(suffix)
-        self.spin.setFixedWidth(72)
+        self.spin.setFixedWidth(70)
         self.spin.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.spin.setToolTip("Double-click the slider to reset")
         lay.addWidget(lbl)
         lay.addWidget(self.slider, 1)
         lay.addWidget(self.spin)
         self.slider.valueChanged.connect(self._from_slider)
         self.spin.valueChanged.connect(self._from_spin)
+        self.slider.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        if obj is self.slider and ev.type() == QtCore.QEvent.MouseButtonDblClick:
+            self.set_value(self._default)
+            self.valueChanged.emit(self._default)
+            return True
+        return super(_SliderRow, self).eventFilter(obj, ev)
 
     def _from_slider(self, v):
         self.spin.blockSignals(True)
@@ -142,75 +276,74 @@ class _SliderRow(QtWidgets.QWidget):
             w.blockSignals(False)
 
 
+# ── window ───────────────────────────────────────────────────────────────────
 class LookdevRigDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(LookdevRigDialog, self).__init__(parent or _max_main_window())
         self.setWindowTitle("Lookdev Rig · Studio Toolbar")
-        self.setMinimumSize(760, 560)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowMinMaxButtonsHint)
+        self.setMinimumSize(780, 520)
+        self.resize(1180, 720)
         self.setStyleSheet(STYLE)
         self._hdris = []
         self._loading = False
+        self._history = []
+        self._thumb = THUMB_DEFAULT
+        self._settings = load_settings()
         self._build_ui()
+        self._geom_timer = QtCore.QTimer(self)
+        self._geom_timer.setSingleShot(True)
+        self._geom_timer.setInterval(600)
+        self._geom_timer.timeout.connect(self._save_layout)
+        self._restore_settings()
         self.refresh()
 
     # -- UI -----------------------------------------------------------------
 
     def _build_ui(self):
-        lay = QtWidgets.QVBoxLayout(self)
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_topbar())
 
-        top = QtWidgets.QHBoxLayout()
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.addWidget(self._build_sidebar())
+        self.splitter.addWidget(self._build_grid())
+        self.splitter.addWidget(self._build_right())
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(2, 0)
+        self.splitter.setSizes([170, 640, 340])
+        self.splitter.splitterMoved.connect(lambda *_: self._geom_timer.start())
+        root.addWidget(self.splitter, 1)
+        root.addWidget(self._build_statusbar())
+
+    def _build_topbar(self):
+        bar = QtWidgets.QFrame()
+        bar.setObjectName("topbar")
+        lay = QtWidgets.QHBoxLayout(bar)
+        lay.setContentsMargins(10, 6, 10, 6)
+        lay.setSpacing(6)
+        name = QtWidgets.QLabel("LOOKDEV RIG")
+        name.setObjectName("appname")
+        lay.addWidget(name)
+        lay.addSpacing(14)
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText("Search HDRIs, tags…")
+        self.search.setClearButtonEnabled(True)
+        self.search.setMinimumWidth(220)
+        self.search.textChanged.connect(self._apply_filter)
+        lay.addWidget(self.search, 1)
+        lay.addSpacing(10)
         self.lbl_renderer = QtWidgets.QLabel()
-        top.addWidget(self.lbl_renderer, 1)
-        top.addWidget(QtWidgets.QLabel("Preset:"))
-        self.cmb_preset = QtWidgets.QComboBox()
-        self.cmb_preset.setMinimumWidth(170)
-        top.addWidget(self.cmb_preset)
-        lay.addLayout(top)
-
-        mid = QtWidgets.QHBoxLayout()
-        self.lst_hdri = QtWidgets.QListWidget()
-        self.lst_hdri.setViewMode(QtWidgets.QListView.IconMode)
-        self.lst_hdri.setIconSize(GRID_THUMB)
-        self.lst_hdri.setResizeMode(QtWidgets.QListView.Adjust)
-        self.lst_hdri.setMovement(QtWidgets.QListView.Static)
-        self.lst_hdri.setSpacing(4)
-        self.lst_hdri.setWordWrap(True)
-        self.lst_hdri.currentItemChanged.connect(self.on_hdri_changed)
-        self.lst_hdri.itemDoubleClicked.connect(lambda *_: self.on_build())
-        mid.addWidget(self.lst_hdri, 1)
-        mid.addWidget(self._build_side())
-        lay.addLayout(mid, 1)
-
-        opts = QtWidgets.QHBoxLayout()
-        self.chk_turntable = QtWidgets.QCheckBox("Turntable")
-        self.chk_turntable.setToolTip("Object turn, then HDRI turn (frames from the preset)")
-        self.chk_turntable.setChecked(True)
-        self.chk_ground = QtWidgets.QCheckBox("Shadow catcher")
-        self.chk_ground.setToolTip("Ground plane under the asset that only shows shadows")
-        self.chk_ground.setChecked(True)
-        self.chk_clay = QtWidgets.QCheckBox("Clay")
-        self.chk_clay.setToolTip("Grey override on the asset (refs untouched).\n"
-                                 "Turning it off puts the original materials back;\n"
-                                 "material edits made while clay is on are discarded.")
-        self.chk_clay.toggled.connect(self.on_clay)
-        for w in (self.chk_turntable, self.chk_ground, self.chk_clay):
-            opts.addWidget(w)
-            opts.addSpacing(10)
-        opts.addStretch(1)
-        self.lbl_camera = QtWidgets.QLabel()
-        self.lbl_camera.setObjectName("dim")
-        opts.addWidget(self.lbl_camera)
-        lay.addLayout(opts)
-
-        btns = QtWidgets.QHBoxLayout()
-        b_folder = QtWidgets.QPushButton("Open folder")
-        b_folder.setToolTip(core.HDRI_DIR)
-        b_folder.clicked.connect(self.on_open_folder)
+        self.lbl_renderer.setObjectName("badge")
+        lay.addWidget(self.lbl_renderer)
 
         self.b_library = QtWidgets.QToolButton()
         self.b_library.setText("Refresh library")
         self.b_library.setToolTip("Generates missing thumbnails and blurred backgrounds\n"
-                                  "(shared by every DCC toolbar)")
+                                  "in hdri\\_cache (shared by every DCC toolbar)")
         self.b_library.setPopupMode(QtWidgets.QToolButton.MenuButtonPopup)
         self.b_library.clicked.connect(lambda: self.on_refresh_library())
         m = QtWidgets.QMenu(self.b_library)
@@ -218,37 +351,55 @@ class LookdevRigDialog(QtWidgets.QDialog):
         m.addAction("Missing + Arnold .tx", lambda: self.on_refresh_library(make_tx=True))
         m.addSeparator()
         m.addAction("Rebuild all previews", lambda: self.on_refresh_library(force=True))
+        m.addSeparator()
+        m.addAction("Reload list", self.refresh)
         self.b_library.setMenu(m)
+        lay.addWidget(self.b_library)
+        b_folder = QtWidgets.QPushButton("Open folder")
+        b_folder.setToolTip(core.HDRI_DIR)
+        b_folder.clicked.connect(self.on_open_folder)
+        lay.addWidget(b_folder)
+        return bar
 
-        b_remove = QtWidgets.QPushButton("Delete rig")
-        b_remove.setToolTip("Deletes every LKD_ node (the asset is untouched)")
-        b_remove.clicked.connect(self.on_remove)
-        self.b_build = QtWidgets.QPushButton("Build / update rig")
-        self.b_build.setObjectName("primary")
-        self.b_build.setDefault(True)
-        self.b_build.clicked.connect(self.on_build)
-        for b in (b_folder, self.b_library, b_remove):
-            btns.addWidget(b)
-        btns.addStretch(1)
-        btns.addWidget(self.b_build)
-        lay.addLayout(btns)
+    def _build_sidebar(self):
+        self.sidebar = QtWidgets.QListWidget()
+        self.sidebar.setObjectName("sidebar")
+        self.sidebar.setMinimumWidth(130)
+        self.sidebar.currentItemChanged.connect(lambda *_: self._on_filter_changed())
+        return self.sidebar
 
-        self.txt_log = QtWidgets.QPlainTextEdit()
-        self.txt_log.setReadOnly(True)
-        self.txt_log.setMaximumHeight(80)
-        lay.addWidget(self.txt_log)
+    def _build_grid(self):
+        self.grid = QtWidgets.QListWidget()
+        self.grid.setObjectName("grid")
+        self.grid.setViewMode(QtWidgets.QListView.IconMode)
+        self.grid.setResizeMode(QtWidgets.QListView.Adjust)
+        self.grid.setMovement(QtWidgets.QListView.Static)
+        self.grid.setUniformItemSizes(True)
+        self.grid.setSpacing(6)
+        self.grid.setWordWrap(True)
+        self.grid.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self.grid.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.grid.currentItemChanged.connect(self.on_hdri_changed)
+        self.grid.itemDoubleClicked.connect(lambda *_: self.on_build())
+        self.grid.viewport().installEventFilter(self)
+        self.grid.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.grid.customContextMenuRequested.connect(self._grid_menu)
+        return self.grid
 
-    def _build_side(self):
-        side = QtWidgets.QWidget()
-        side.setFixedWidth(PREVIEW.width() + 16)
-        v = QtWidgets.QVBoxLayout(side)
-        v.setContentsMargins(0, 0, 0, 0)
+    def _build_right(self):
+        scroll = QtWidgets.QScrollArea()
+        scroll.setObjectName("rightscroll")
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(260)
+        panel = QtWidgets.QWidget()
+        panel.setObjectName("rightpanel")
+        v = QtWidgets.QVBoxLayout(panel)
+        v.setContentsMargins(12, 12, 12, 12)
+        v.setSpacing(6)
 
-        self.lbl_preview = QtWidgets.QLabel()
-        self.lbl_preview.setObjectName("preview")
-        self.lbl_preview.setFixedSize(PREVIEW)
-        self.lbl_preview.setAlignment(QtCore.Qt.AlignCenter)
-        v.addWidget(self.lbl_preview, 0, QtCore.Qt.AlignHCenter)
+        self.preview = _Preview()
+        v.addWidget(self.preview)
         self.lbl_name = QtWidgets.QLabel()
         self.lbl_name.setObjectName("title")
         v.addWidget(self.lbl_name)
@@ -257,8 +408,46 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.lbl_info.setWordWrap(True)
         v.addWidget(self.lbl_info)
 
-        box = QtWidgets.QGroupBox("DOME · LIVE")
-        b = QtWidgets.QVBoxLayout(box)
+        # RIG
+        v.addWidget(_section("Rig"))
+        row = QtWidgets.QHBoxLayout()
+        lbl = QtWidgets.QLabel("Preset")
+        lbl.setFixedWidth(64)
+        row.addWidget(lbl)
+        self.cmb_preset = QtWidgets.QComboBox()
+        self.cmb_preset.currentTextChanged.connect(self._on_preset_changed)
+        row.addWidget(self.cmb_preset, 1)
+        v.addLayout(row)
+        self.chk_turntable = QtWidgets.QCheckBox("Turntable  (object, then HDRI)")
+        self.chk_turntable.setToolTip("Frames from the preset; the asset itself never moves")
+        self.chk_ground = QtWidgets.QCheckBox("Shadow catcher")
+        self.chk_ground.setToolTip("Ground plane under the asset that only shows shadows")
+        self.chk_clay = QtWidgets.QCheckBox("Clay  (grey override, live)")
+        self.chk_clay.setToolTip("Swaps the asset materials for a grey diffuse; refs untouched.\n"
+                                 "Turning it off puts the originals back — material edits made\n"
+                                 "while clay is on are discarded.")
+        self.chk_clay.toggled.connect(self.on_clay)
+        for w in (self.chk_turntable, self.chk_ground, self.chk_clay):
+            v.addWidget(w)
+            w.toggled.connect(lambda *_: self._save_options())
+        self.lbl_camera = QtWidgets.QLabel()
+        self.lbl_camera.setObjectName("dim")
+        self.lbl_camera.setWordWrap(True)
+        v.addWidget(self.lbl_camera)
+        brow = QtWidgets.QHBoxLayout()
+        self.b_build = QtWidgets.QPushButton("Build / update rig")
+        self.b_build.setObjectName("primary")
+        self.b_build.setToolTip("Builds the rig around the selection (double-click an HDRI does the same)")
+        self.b_build.clicked.connect(self.on_build)
+        b_remove = QtWidgets.QPushButton("Delete rig")
+        b_remove.setToolTip("Deletes every LKD_ node and restores the asset materials")
+        b_remove.clicked.connect(self.on_remove)
+        brow.addWidget(self.b_build, 1)
+        brow.addWidget(b_remove)
+        v.addLayout(brow)
+
+        # DOME · LIVE
+        v.addWidget(_section("Dome · live"))
         self.row_rot = _SliderRow("Rotation", -180.0, 180.0, 1.0, 1, "°")
         self.row_rot.setToolTip("HDRI rotation; the turntable spin is added on top")
         self.row_rot.valueChanged.connect(self.on_rotation)
@@ -269,16 +458,152 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.chk_bg.setToolTip("Off: the dome still lights the asset, the render gets alpha")
         self.chk_bg.toggled.connect(self.on_background)
         self.b_save_default = QtWidgets.QPushButton("Save as HDRI default")
-        self.b_save_default.setToolTip("Writes rotation and intensity to the HDRI .json sidecar\n"
-                                       "— every toolbar (Max, Houdini, Blender, Maya) starts there")
+        self.b_save_default.setToolTip("Writes rotation and intensity to the HDRI .json sidecar —\n"
+                                       "every toolbar (Max, Houdini, Blender, Maya) starts there")
         self.b_save_default.clicked.connect(self.on_save_default)
         self.lbl_live = QtWidgets.QLabel()
         self.lbl_live.setObjectName("dim")
         for w in (self.row_rot, self.row_ev, self.chk_bg, self.b_save_default, self.lbl_live):
-            b.addWidget(w)
-        v.addWidget(box)
+            v.addWidget(w)
         v.addStretch(1)
-        return side
+        scroll.setWidget(panel)
+        return scroll
+
+    def _build_statusbar(self):
+        bar = QtWidgets.QFrame()
+        bar.setObjectName("statusbar")
+        lay = QtWidgets.QHBoxLayout(bar)
+        lay.setContentsMargins(10, 3, 10, 3)
+        self.lbl_status = QtWidgets.QLabel()
+        self.lbl_status.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.lbl_status.setToolTip("Click for the message history")
+        self.lbl_status.installEventFilter(self)
+        lay.addWidget(self.lbl_status, 1)
+        self.lbl_count = QtWidgets.QLabel()
+        self.lbl_count.setObjectName("dim")
+        lay.addWidget(self.lbl_count)
+        lay.addSpacing(14)
+        small = QtWidgets.QLabel("▫")
+        small.setObjectName("dim")
+        lay.addWidget(small)
+        self.size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.size_slider.setRange(THUMB_MIN, THUMB_MAX)
+        self.size_slider.setFixedWidth(120)
+        self.size_slider.setToolTip("Thumbnail size (Ctrl + mouse wheel on the grid)")
+        self.size_slider.valueChanged.connect(self._set_thumb_size)
+        lay.addWidget(self.size_slider)
+        big = QtWidgets.QLabel("◻")
+        big.setObjectName("dim")
+        lay.addWidget(big)
+        return bar
+
+    # -- settings -----------------------------------------------------------
+
+    def _restore_settings(self):
+        s = self._settings
+        if s.get("geometry"):
+            try:
+                self.restoreGeometry(QtCore.QByteArray.fromBase64(s["geometry"].encode("ascii")))
+            except Exception:  # noqa: BLE001
+                pass
+        if s.get("splitter"):
+            try:
+                self.splitter.restoreState(QtCore.QByteArray.fromBase64(s["splitter"].encode("ascii")))
+            except Exception:  # noqa: BLE001
+                pass
+        self._ensure_on_screen()
+        try:
+            self._thumb = max(THUMB_MIN, min(THUMB_MAX, int(s.get("thumb", THUMB_DEFAULT))))
+        except ValueError:
+            self._thumb = THUMB_DEFAULT
+        self.size_slider.blockSignals(True)
+        self.size_slider.setValue(self._thumb)
+        self.size_slider.blockSignals(False)
+        self._apply_thumb_size()
+        for chk, key, default in ((self.chk_turntable, "turntable", "1"),
+                                  (self.chk_ground, "ground", "1")):
+            chk.blockSignals(True)
+            chk.setChecked(s.get(key, default) == "1")
+            chk.blockSignals(False)
+
+    def _ensure_on_screen(self):
+        """Saved position off every screen (monitor unplugged…) → centre the window."""
+        frame = self.frameGeometry()
+        for scr in QtGui.QGuiApplication.screens():
+            g = scr.availableGeometry()
+            if g.intersects(frame) and g.contains(frame.topLeft() + QtCore.QPoint(40, 15)):
+                return
+        scr = QtGui.QGuiApplication.primaryScreen()
+        if scr is not None:
+            g = scr.availableGeometry()
+            w, h = min(self.width(), g.width() - 40), min(self.height(), g.height() - 40)
+            self.resize(w, h)
+            self.move(g.center() - QtCore.QPoint(w // 2, h // 2))
+
+    def _save_layout(self):
+        save_settings(
+            geometry=bytes(self.saveGeometry().toBase64()).decode("ascii"),
+            splitter=bytes(self.splitter.saveState().toBase64()).decode("ascii"),
+            thumb=self._thumb)
+
+    def _save_options(self):
+        if self._loading:
+            return
+        save_settings(turntable=int(self.chk_turntable.isChecked()),
+                      ground=int(self.chk_ground.isChecked()),
+                      preset=self.cmb_preset.currentText())
+
+    def _save_selection(self):
+        if self._loading:
+            return
+        h = self._current_hdri()
+        it = self.sidebar.currentItem()
+        save_settings(hdri=h.name if h else "",
+                      filter=it.data(QtCore.Qt.UserRole) if it else FILTER_ALL)
+
+    def moveEvent(self, e):
+        super(LookdevRigDialog, self).moveEvent(e)
+        self._geom_timer.start()
+
+    def resizeEvent(self, e):
+        super(LookdevRigDialog, self).resizeEvent(e)
+        if hasattr(self, "_geom_timer"):
+            self._geom_timer.start()
+
+    def closeEvent(self, e):
+        self._geom_timer.stop()
+        self._save_layout()
+        self._save_selection()
+        self._save_options()
+        super(LookdevRigDialog, self).closeEvent(e)
+
+    # -- thumbnails size ----------------------------------------------------
+
+    def _set_thumb_size(self, v):
+        self._thumb = int(v)
+        self._apply_thumb_size()
+        self._geom_timer.start()
+
+    def _apply_thumb_size(self):
+        # never wider than the grid, so a narrow panel never crops the thumbnails
+        avail = self.grid.viewport().width() - 34
+        w = max(THUMB_MIN // 2, min(self._thumb, avail)) if avail > 0 else self._thumb
+        self.grid.setIconSize(QtCore.QSize(w, w // 2))
+        self.grid.setGridSize(QtCore.QSize(w + 14, w // 2 + 30))
+
+    def eventFilter(self, obj, ev):
+        grid = getattr(self, "grid", None)
+        if grid is not None and obj is grid.viewport() and ev.type() == QtCore.QEvent.Resize:
+            QtCore.QTimer.singleShot(0, self._apply_thumb_size)
+        if grid is not None and obj is grid.viewport() and ev.type() == QtCore.QEvent.Wheel \
+                and ev.modifiers() & QtCore.Qt.ControlModifier:
+            step = 16 if ev.angleDelta().y() > 0 else -16
+            self.size_slider.setValue(self._thumb + step)
+            return True
+        if obj is getattr(self, "lbl_status", None) and ev.type() == QtCore.QEvent.MouseButtonPress:
+            self._show_history()
+            return True
+        return super(LookdevRigDialog, self).eventFilter(obj, ev)
 
     # -- data ---------------------------------------------------------------
 
@@ -287,33 +612,46 @@ class LookdevRigDialog(QtWidgets.QDialog):
         try:
             try:
                 a = adapters.detect()
-                self.lbl_renderer.setText("Renderer: <b>%s</b>" % a.label)
+                self.lbl_renderer.setText(a.label)
+                self.lbl_renderer.setProperty("error", False)
+                self.lbl_renderer.setToolTip("Active renderer")
                 self.b_build.setEnabled(True)
             except Exception as exc:  # noqa: BLE001
-                self.lbl_renderer.setText("<span style='color:#e06060'>%s</span>" % exc)
+                self.lbl_renderer.setText("Renderer not supported")
+                self.lbl_renderer.setProperty("error", True)
+                self.lbl_renderer.setToolTip(str(exc))
                 self.b_build.setEnabled(False)
+            self.lbl_renderer.style().unpolish(self.lbl_renderer)
+            self.lbl_renderer.style().polish(self.lbl_renderer)
 
-            current = self.cmb_preset.currentText()
+            current = self.cmb_preset.currentText() or self._settings.get("preset", "")
             self.cmb_preset.clear()
             names = list(core.list_presets().keys()) or ["turntable_default"]
             self.cmb_preset.addItems(names)
             if current in names:
                 self.cmb_preset.setCurrentText(current)
 
-            self.lst_hdri.clear()
             self._hdris = core.list_hdris()
+            self._fill_sidebar()
+            self.grid.clear()
             for h in self._hdris:
-                it = QtWidgets.QListWidgetItem(QtGui.QIcon(_thumb_pixmap(h, GRID_THUMB)), h.label)
+                pm = QtGui.QPixmap(h.thumb) if h.thumb else QtGui.QPixmap()
+                if pm.isNull():
+                    pm = _placeholder(256, 128, "no preview")
+                it = QtWidgets.QListWidgetItem(QtGui.QIcon(pm), h.label)
                 it.setData(QtCore.Qt.UserRole, h.name)
-                it.setToolTip(h.path)
-                self.lst_hdri.addItem(it)
+                it.setToolTip("%s\n%s" % (h.label, h.path))
+                it.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
+                self.grid.addItem(it)
             if not self._hdris:
-                self._log("No HDRIs in %s" % core.HDRI_DIR)
-            missing = sum(1 for h in self._hdris if not h.thumb)
-            if missing:
-                self._log("%d HDRI(s) without preview — Refresh library" % missing)
+                self._status("No HDRIs in %s" % core.HDRI_DIR, C_WARN)
+            else:
+                missing = sum(1 for h in self._hdris if not h.thumb)
+                if missing:
+                    self._status("%d HDRI(s) without preview — Refresh library" % missing, C_WARN)
 
             self._select_stored()
+            self._apply_filter()
             self._sync_clay()
             self._update_camera_label()
             self._sync_live()
@@ -321,8 +659,70 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self._loading = False
         self._show_preview(self._current_hdri())
 
+    def _fill_sidebar(self):
+        wanted = (self.sidebar.currentItem().data(QtCore.Qt.UserRole)
+                  if self.sidebar.currentItem() else self._settings.get("filter", FILTER_ALL))
+        self.sidebar.blockSignals(True)
+        self.sidebar.clear()
+
+        def add(text, key, count=None, selectable=True):
+            it = QtWidgets.QListWidgetItem(text if count is None else "%s   %d" % (text, count))
+            it.setData(QtCore.Qt.UserRole, key)
+            if not selectable:
+                it.setFlags(QtCore.Qt.NoItemFlags)
+                it.setForeground(QtGui.QColor(C_TEXT_DIM))
+                f = it.font(); f.setBold(True); f.setPointSize(7); it.setFont(f)
+            self.sidebar.addItem(it)
+            return it
+
+        add("All HDRIs", FILTER_ALL, len(self._hdris))
+        missing = sum(1 for h in self._hdris if not h.thumb)
+        if missing:
+            add("Missing preview", FILTER_MISSING, missing)
+        tags = {}
+        for h in self._hdris:
+            for t in h.meta.get("tags") or []:
+                tags[str(t)] = tags.get(str(t), 0) + 1
+        if tags:
+            add("", None, selectable=False)
+            add("TAGS", None, selectable=False)
+            for t in sorted(tags, key=str.lower):
+                add(t, FILTER_TAG + t, tags[t])
+        row = 0
+        for i in range(self.sidebar.count()):
+            if self.sidebar.item(i).data(QtCore.Qt.UserRole) == wanted:
+                row = i
+                break
+        self.sidebar.setCurrentRow(row)
+        self.sidebar.blockSignals(False)
+
+    def _on_filter_changed(self):
+        self._apply_filter()
+        self._save_selection()
+
+    def _apply_filter(self, *_):
+        it = self.sidebar.currentItem()
+        key = it.data(QtCore.Qt.UserRole) if it else FILTER_ALL
+        text = self.search.text().strip().lower()
+        by_name = {h.name: h for h in self._hdris}
+        shown = 0
+        for i in range(self.grid.count()):
+            item = self.grid.item(i)
+            h = by_name.get(item.data(QtCore.Qt.UserRole))
+            ok = h is not None
+            if ok and key == FILTER_MISSING:
+                ok = not h.thumb
+            elif ok and key and key.startswith(FILTER_TAG):
+                ok = key[len(FILTER_TAG):] in [str(t) for t in h.meta.get("tags") or []]
+            if ok and text:
+                hay = " ".join([h.name, h.label] + [str(t) for t in h.meta.get("tags") or []]).lower()
+                ok = all(word in hay for word in text.split())
+            item.setHidden(not ok)
+            shown += ok
+        self.lbl_count.setText("%d / %d HDRIs" % (shown, len(self._hdris)))
+
     def _current_hdri(self):
-        item = self.lst_hdri.currentItem()
+        item = self.grid.currentItem()
         if not item:
             return None
         name = item.data(QtCore.Qt.UserRole)
@@ -330,18 +730,16 @@ class LookdevRigDialog(QtWidgets.QDialog):
 
     def _show_preview(self, h):
         if h is None:
-            self.lbl_preview.setPixmap(_placeholder(PREVIEW, "No HDRI"))
+            self.preview.set_source(None)
             self.lbl_name.setText("")
             self.lbl_info.setText("")
             return
-        self.lbl_preview.setPixmap(_thumb_pixmap(h, PREVIEW))
+        self.preview.set_source(QtGui.QPixmap(h.thumb) if h.thumb else None)
         self.lbl_name.setText(h.label)
-        bits = []
+        bits = ["Default rotation %.1f°  ·  intensity %.2f" % (h.rotation_offset, h.intensity)]
         if h.meta.get("tags"):
-            bits.append(", ".join(h.meta["tags"]))
-        bits.append("default rot %.1f° · intensity %.2f" % (h.rotation_offset, h.intensity))
-        if h.bg:
-            bits.append("blurred bg ready")
+            bits.append("Tags: " + ", ".join(str(t) for t in h.meta["tags"]))
+        bits.append(os.path.basename(h.path) + ("  ·  blurred bg ready" if h.bg else ""))
         self.lbl_info.setText("\n".join(bits))
 
     def _sync_live(self):
@@ -356,7 +754,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self.chk_bg.blockSignals(True)
             self.chk_bg.setChecked(state["bg_visible"])
             self.chk_bg.blockSignals(False)
-            self.lbl_live.setText("Acting on the rig · %s" % state["hdri"])
+            self.lbl_live.setText("Acting on the rig  ·  %s" % state["hdri"])
         else:
             self.lbl_live.setText("Build the rig to adjust the dome live")
 
@@ -366,8 +764,9 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self.lbl_camera.setText("Camera: copy of %s" % cam.name)
             self.lbl_camera.setToolTip("A camera is selected with the asset: the rig uses its framing")
         else:
-            self.lbl_camera.setText("Camera: automatic framing")
-            self.lbl_camera.setToolTip("Select a camera together with the asset to use its framing")
+            self.lbl_camera.setText("Camera: automatic framing  (select a camera with the asset "
+                                    "to use its framing)")
+            self.lbl_camera.setToolTip("")
 
     def _sync_clay(self):
         self.chk_clay.blockSignals(True)
@@ -378,64 +777,107 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.chk_clay.blockSignals(False)
 
     def _select_stored(self):
-        """Preselect the rig's HDRI, else the one stored on the selected asset."""
+        """Rig HDRI first, then the one stored on the selected asset, then the last one used."""
         state = builder.hdri_state()
         hdri = state["hdri"] if state else None
-        preset = None
         sel = list(rt.selection)
         if sel and hdri is None:
             hdri, preset = builder.stored_settings(sel[0])
-        if preset:
-            self.cmb_preset.setCurrentText(preset)
-        if self.cmb_preset.currentText():
-            p = core.load_preset(self.cmb_preset.currentText())
-            self.chk_ground.setChecked(bool(p["ground"].get("shadow_catcher", True)))
-        for i in range(self.lst_hdri.count()):
-            if self.lst_hdri.item(i).data(QtCore.Qt.UserRole) == hdri:
-                self.lst_hdri.setCurrentRow(i)
+            if preset:
+                self.cmb_preset.setCurrentText(preset)
+        hdri = hdri or self._settings.get("hdri")
+        for i in range(self.grid.count()):
+            if self.grid.item(i).data(QtCore.Qt.UserRole) == hdri:
+                self.grid.setCurrentRow(i)
+                self.grid.scrollToItem(self.grid.item(i))
                 return
-        if self.lst_hdri.count():
-            self.lst_hdri.setCurrentRow(0)
+        if self.grid.count():
+            self.grid.setCurrentRow(0)
+
+    def _on_preset_changed(self, name):
+        if not name or self._loading:
+            return
+        p = core.load_preset(name)
+        self.chk_ground.setChecked(bool(p["ground"].get("shadow_catcher", True)))
+        self._save_options()
+
+    # -- status -------------------------------------------------------------
+
+    def _status(self, msg, color=C_TEXT):
+        from datetime import datetime
+        self._history.append((datetime.now().strftime("%H:%M:%S"), msg, color))
+        self._history = self._history[-60:]
+        self.lbl_status.setText("<span style='color:%s'>●</span>&nbsp; %s" % (color, msg))
 
     def _log(self, msg):
-        self.txt_log.appendPlainText(msg)
+        self._status(msg, C_TEXT)
+
+    def _show_history(self):
+        if not self._history:
+            return
+        m = QtWidgets.QMenu(self)
+        for t, msg, _c in reversed(self._history[-25:]):
+            a = m.addAction("%s   %s" % (t, msg))
+            a.setEnabled(False)
+        m.exec(self.lbl_status.mapToGlobal(QtCore.QPoint(0, -m.sizeHint().height())))
 
     # -- actions ------------------------------------------------------------
 
-    def on_hdri_changed(self, *_):
+    def _grid_menu(self, pos):
+        h = self._current_hdri()
+        if h is None:
+            return
+        m = QtWidgets.QMenu(self)
+        m.addAction("Build rig with this HDRI", self.on_build)
+        a = m.addAction("Use on the rig", lambda: self.on_hdri_changed(force=True))
+        a.setEnabled(builder.hdri_state() is not None)
+        m.addSeparator()
+        m.addAction("Show in folder", lambda: self._reveal(h.path))
+        m.exec(self.grid.viewport().mapToGlobal(pos))
+
+    def _reveal(self, path):
+        try:
+            import subprocess
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        except Exception as exc:  # noqa: BLE001
+            self._status("Show in folder: %s" % exc, C_ERR)
+
+    def on_hdri_changed(self, *_, force=False):
         h = self._current_hdri()
         self._show_preview(h)
-        if self._loading or h is None or builder.hdri_state() is None:
+        if self._loading or h is None:
             return
-        if builder.hdri_state()["hdri"] == h.name:
+        self._save_selection()
+        state = builder.hdri_state()
+        if state is None or (state["hdri"] == h.name and not force):
             return
         try:
             builder.set_hdri(h)
         except Exception as exc:  # noqa: BLE001
-            self._log("HDRI: %s" % exc)
+            self._status("HDRI: %s" % exc, C_ERR)
             return
         rt.redrawViews()
         self._sync_live()
-        self._log("Dome → %s" % h.label)
+        self._status("Dome → %s" % h.label, C_OK)
 
     def on_rotation(self, value):
         try:
             builder.set_rotation(value)
             rt.redrawViews()
         except Exception as exc:  # noqa: BLE001
-            self._log("Rotation: %s" % exc)
+            self._status("Rotation: %s" % exc, C_ERR)
 
     def on_exposure(self, value):
         try:
             builder.set_exposure(value)
         except Exception as exc:  # noqa: BLE001
-            self._log("Exposure: %s" % exc)
+            self._status("Exposure: %s" % exc, C_ERR)
 
     def on_background(self, on):
         try:
             builder.set_background_visible(on)
         except Exception as exc:  # noqa: BLE001
-            self._log("Background: %s" % exc)
+            self._status("Background: %s" % exc, C_ERR)
 
     def on_save_default(self):
         state = builder.hdri_state()
@@ -451,24 +893,24 @@ class LookdevRigDialog(QtWidgets.QDialog):
         try:
             saved = builder.save_hdri_defaults()
         except Exception as exc:  # noqa: BLE001
-            self._log("Save default: %s" % exc)
+            self._status("Save default: %s" % exc, C_ERR)
             return
-        self._log("Saved %s · rot %.1f° · intensity %.3f"
-                  % (name, saved["rotation_offset_deg"], saved["intensity"]))
         self.refresh()
+        self._status("Saved %s  ·  rot %.1f°  ·  intensity %.3f"
+                     % (name, saved["rotation_offset_deg"], saved["intensity"]), C_OK)
 
     def on_refresh_library(self, make_tx=False, force=False):
         try:
             from . import library_max
         except Exception as exc:  # noqa: BLE001
-            self._log("Library: %s" % exc)
+            self._status("Library: %s" % exc, C_ERR)
             return
         if make_tx and not library_max.find_maketx():
-            self._log("maketx not found (Arnold) — previews only")
+            self._status("maketx not found (Arnold) — previews only", C_WARN)
             make_tx = False
         jobs = library_max.pending(want_tx=make_tx, force=force)
         if not jobs:
-            self._log("Library up to date")
+            self._status("Library up to date", C_OK)
             return
         dlg = QtWidgets.QProgressDialog("Preparing…", "Cancel", 0, len(jobs), self)
         dlg.setWindowTitle("Refresh library")
@@ -484,22 +926,25 @@ class LookdevRigDialog(QtWidgets.QDialog):
 
         report = library_max.refresh(make_tx=make_tx, force=force, progress=progress)
         dlg.close()
-        self._log("Library: %d updated%s" % (len(report.done),
-                                              (", %d errors" % len(report.errors)) if report.errors else ""))
-        for e in report.errors:
-            self._log("  " + e)
         self.refresh()
+        if report.errors:
+            for e in report.errors:
+                self._status(e, C_ERR)
+            self._status("Library: %d updated, %d errors (click for details)"
+                         % (len(report.done), len(report.errors)), C_ERR)
+        else:
+            self._status("Library: %d updated" % len(report.done), C_OK)
 
     def on_open_folder(self):
         if os.path.isdir(core.HDRI_DIR):
             os.startfile(core.HDRI_DIR)
         else:
-            self._log("Folder not found: %s" % core.HDRI_DIR)
+            self._status("Folder not found: %s" % core.HDRI_DIR, C_ERR)
 
     def on_build(self):
         hdri = self._current_hdri()
         if hdri is None:
-            self._log("Pick an HDRI.")
+            self._status("Pick an HDRI", C_WARN)
             return
         preset_name = self.cmb_preset.currentText() or "turntable_default"
         overrides = {
@@ -511,17 +956,17 @@ class LookdevRigDialog(QtWidgets.QDialog):
         try:
             rig = builder.build(hdri, preset_name, overrides=overrides)
         except Exception as exc:  # noqa: BLE001
-            self._log("ERROR: %s" % exc)
+            self._status(str(exc), C_ERR)
             return
-
-        msg = "Rig built · %s · %s · %d nodes" % (rig["adapter"], hdri.label, len(rig["nodes"]))
-        if "render_range" in rig:
-            msg += " · frames %d-%d" % rig["render_range"]
-        if rig.get("camera_source"):
-            msg += " · camera copied from %s" % rig["camera_source"]
-        self._log(msg)
         for line in rig["warnings"] + rig["log"]:
-            self._log(line)
+            self._status(line.strip(), C_WARN)
+        msg = "Rig built  ·  %s  ·  %d nodes" % (hdri.label, len(rig["nodes"]))
+        if "render_range" in rig:
+            msg += "  ·  frames %d-%d" % rig["render_range"]
+        if rig.get("camera_source"):
+            msg += "  ·  camera from %s" % rig["camera_source"]
+        warn = rig["warnings"] or rig["log"]
+        self._status(msg + ("  ·  check messages" if warn else ""), C_WARN if warn else C_OK)
         self._sync_clay()
         self._sync_live()
 
@@ -529,11 +974,11 @@ class LookdevRigDialog(QtWidgets.QDialog):
         try:
             n = builder.set_clay(on)
         except Exception as exc:  # noqa: BLE001
-            self._log("Clay: %s" % exc)
+            self._status("Clay: %s" % exc, C_ERR)
             self._sync_clay()
             return
         rt.redrawViews()
-        self._log("Clay %s · %d objects" % ("on" if on else "off", n))
+        self._status("Clay %s  ·  %d objects" % ("on" if on else "off", n), C_OK)
 
     def on_remove(self):
         with pymxs.undo(True, "Delete Lookdev Rig"):
@@ -541,11 +986,11 @@ class LookdevRigDialog(QtWidgets.QDialog):
         rt.redrawViews()
         self._sync_clay()
         self._sync_live()
-        self._log("Rig deleted (asset materials restored).")
+        self._status("Rig deleted  ·  asset materials restored", C_OK)
 
 
 def show():
-    """Opens the dialog; if it is already open, brings it to the front."""
+    """Opens the window; if it is already open, brings it to the front."""
     global _INSTANCE
     if _INSTANCE is not None:
         try:

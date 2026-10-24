@@ -29,7 +29,30 @@ class VRayAdapter(RenderAdapter):
         set_prop(light, "texmap_on", True, self.log)
         set_prop(light, "multiplier", float(intensity), self.log)
         set_prop(light, "invisible", False, self.log)            # background visible to camera
+        self._lock_texture_to_icon(light)
         return light
+
+    # Names V-Ray has used for the dome's "Lock texture to icon" option. Without it the
+    # HDRI stays fixed in world space and rotating the light (or the turntable) does nothing.
+    LOCK_PROPS = ("texmap_locktolight", "dome_locktexture", "lock_texture_to_icon",
+                  "lockTextureToIcon", "texmap_lock", "dome_lock_texture")
+
+    def _lock_texture_to_icon(self, light):
+        if set_first(light, self.LOCK_PROPS, True) is not None:
+            return True
+        # Unknown V-Ray build: look for any property that reads like "lock … tex/icon"
+        try:
+            names = [str(n) for n in rt.getPropNames(light)]
+        except Exception:  # noqa: BLE001
+            names = []
+        for n in names:
+            low = n.lower().lstrip("#")
+            if "lock" in low and ("tex" in low or "icon" in low):
+                if set_prop(light, low, True, self.log):
+                    return True
+        self.log.append("  ! V-Ray: 'Lock texture to icon' not found — tick it on LKD_dome "
+                        "or the HDRI won't rotate")
+        return False
 
     def set_dome_background(self, node, visible):
         return set_prop(node, "invisible", not visible, self.log)

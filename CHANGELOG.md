@@ -1,8 +1,11 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.8
+- Lookdev Rig: previews / blurred backgrounds / defaults of other HDRI folders now go to the studio drive, `T:\.studio-toolbar\shared\lookdev\_library_cache\` (one sub-folder per library) instead of each user's profile — generated once for everybody, easy to wipe (Refresh library rebuilds them). New **Refresh library ▾ → Open cache folder**
+
 ## v2.8.7 — Lookdev Rig 0.7.0
 - **Any folder as HDRI library** (top bar): pick a collection (e.g. on the NAS) to try HDRIs without copying them, and switch back to the Studio library. Recent folders are remembered. Sub-folders show as a FOLDERS tree in the sidebar and are searchable
-  - Nothing is written into those folders: previews, blurred backgrounds and "Save as HDRI default" go to a local cache (`~/.studio-toolbar/lookdev_cache/`). Only the optional Arnold `.tx` is written next to the source
+  - Nothing is written into those folders: previews, blurred backgrounds and "Save as HDRI default" go to a local cache (`shared\lookdev\_library_cache\` since v2.8.8). Only the optional Arnold `.tx` is written next to the source
   - Refresh library asks before processing a big collection; it can be cancelled and resumed
   - The rig stores the HDRI's full path, so live controls and Save default work with any library
 - **Right panel tidied:** aligned label / control columns, sections Rig · References · Dome; fixed-height HDRI details (nothing jumps when switching HDRIs), long text elided with full text in the tooltip, wider minimum width (no cut text), value boxes sized to their content and aligned, colour swatch the same height as the Background list

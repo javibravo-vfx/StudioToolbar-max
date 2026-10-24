@@ -401,7 +401,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.cmb_library.setMaximumWidth(320)
         self.cmb_library.setToolTip("HDRI library: the shared studio one, or any folder (e.g. a\n"
                                     "collection on the NAS) to try HDRIs without copying them.\n"
-                                    "Previews of other folders are cached locally — the folder is\n"
+                                    "Previews of other folders go to shared\\lookdev\\_library_cache — the folder is\n"
                                     "never written to.")
         self.cmb_library.activated.connect(self._on_library_activated)
         lay.addWidget(self.cmb_library)
@@ -429,6 +429,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         m.addAction("Rebuild all previews", lambda: self.on_refresh_library(force=True))
         m.addSeparator()
         m.addAction("Reload list", self.refresh)
+        m.addAction("Open cache folder", self.on_open_cache)
         self.b_library.setMenu(m)
         lay.addWidget(self.b_library)
         b_folder = QtWidgets.QPushButton("Open folder")
@@ -614,7 +615,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.b_save_default = QtWidgets.QPushButton("Save as HDRI default")
         self.b_save_default.setToolTip("Writes rotation and intensity as this HDRI's default\n"
                                        "(studio library: shared .json sidecar, read by every toolbar;\n"
-                                       " other folders: local cache, the collection is never touched)")
+                                       " other folders: shared _library_cache, the collection is never touched)")
         self.b_save_default.clicked.connect(self.on_save_default)
         v.addWidget(self.b_save_default)
         self.lbl_live = _ElidedLabel()
@@ -1219,7 +1220,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
             r = QtWidgets.QMessageBox.question(
                 self, "Refresh library",
                 "Generate previews for %d HDRIs in\n%s ?\n\nIt can take a while (each HDRI is read "
-                "once). Previews go to your local cache; the folder itself is not modified.\n"
+                "once). Previews go to T:\\…\\lookdev\\_library_cache; the folder itself is not modified.\n"
                 "You can cancel at any time and continue later." % (len(jobs), self._root))
             if r != QtWidgets.QMessageBox.Yes:
                 return
@@ -1252,6 +1253,16 @@ class LookdevRigDialog(QtWidgets.QDialog):
             os.startfile(self._root)
         else:
             self._status("Folder not found: %s" % self._root, C_ERR)
+
+    def on_open_cache(self):
+        """Cache of the current library (thumbnails, blurred backgrounds, defaults)."""
+        folder = core.library_cache_dir(self._root)
+        if not os.path.isdir(folder):
+            folder = core.LIBRARY_CACHE_ROOT if not core.is_default_library(self._root) else self._root
+        if os.path.isdir(folder):
+            os.startfile(folder)
+        else:
+            self._status("No cache yet — Refresh library creates it", C_WARN)
 
     # -- libraries ----------------------------------------------------------
 

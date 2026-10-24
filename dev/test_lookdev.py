@@ -538,7 +538,8 @@ tm = library.tonemap_srgb8([0.18, 0.18, 0.18] * 4)
 check("library: tonemap grey stays neutral", tm[0] == tm[1] == tm[2] and 60 < tm[0] < 200, tm[:3])
 
 # 8b. another folder as library (e.g. a collection on the NAS) — never written to
-core.LOCAL_CACHE_ROOT = os.path.join(tmp, "local_cache")
+check("ext library: cache on the studio drive (shared/lookdev/_library_cache)",
+      core.LIBRARY_CACHE_ROOT == os.path.join(os.environ["STUDIO_LOOKDEV_DIR"], "_library_cache"))
 ext = os.path.join(tmp, "nas_hdri")
 for sub in ("exterior/day", "exterior/night", "studio", "_skip"):
     os.makedirs(os.path.join(ext, *sub.split("/")), exist_ok=True)
@@ -554,8 +555,8 @@ check("ext library: sub-folders become groups, _folders skipped",
 written = []
 library.refresh(_read, _jpg, _exr, folder=ext)
 after = sorted(os.path.relpath(os.path.join(d, f), ext) for d, _, fs in os.walk(ext) for f in fs)
-check("ext library: previews go to the local cache, folder untouched",
-      after == before and len(written) == 8 and all(w.startswith(core.LOCAL_CACHE_ROOT) for w in written))
+check("ext library: previews go to the shared library cache, folder untouched",
+      after == before and len(written) == 8 and all(w.startswith(core.LIBRARY_CACHE_ROOT) for w in written))
 h = core.list_hdris(ext)[0]
 check("ext library: cached thumb + bg picked up", h.thumb and h.bg and h.root == ext)
 core.save_sidecar(h.path, {"rotation_offset_deg": 33}, root=h.root)

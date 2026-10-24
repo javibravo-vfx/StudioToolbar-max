@@ -1,5 +1,12 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.2 — Lookdev Rig 0.2.0
+- **Shadow catcher:** ground plane under the asset that only shows shadows (V-Ray: VRayMtlWrapper matte with alpha -1; Arnold: ai_shadow_matte). Orbits with the rig so ground and light stay fixed to the camera. Toggle in the dialog or `ground.shadow_catcher` in the preset
+- **Use the selected camera:** select a camera together with the asset and the rig takes its framing (`LKD_cam` copies its transform and FOV, so the turntable never moves the original). Works with any camera type; the dialog shows which camera will be used
+- **Clay:** live toggle that swaps the asset materials for a grey diffuse (`clay.albedo`, 0.18 default); refs untouched. Originals are stored on the hidden `LKD_store` node (saved with the .max) and come back when clay is turned off, the rig is rebuilt or deleted
+- Shared preset gains `ground` and `clay` sections; shared core and data now in English
+- `dev/test_lookdev.py`: fake-pymxs end-to-end test of build / clay / remove, selected camera, V-Ray, Arnold and stub engines (35 checks)
+
 ## v2.8.1
 - **Bake Camera** moved off the bar: now in **TOOLS ▾** (under Show Textures) and in the right-click menu — its slot is used by Lookdev Rig, so the toolbar keeps the v2.7.0 width
 - `dev/test_features.py`: Bake Camera menu checks

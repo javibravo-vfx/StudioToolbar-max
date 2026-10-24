@@ -5,6 +5,7 @@ Each engine implements ONLY four things:
     create_dome(hdri_path, intensity, name)  -> light node carrying the HDRI
     mtl_chrome(name)                         -> perfect mirror material
     mtl_flat(name, rgb)                      -> pure diffuse material (18% grey, chart patches)
+    mtl_shadow_catcher(name)                 -> matte that only shows shadows (optional)
     setup_ref_node(node, cast_shadows)       -> visibility of balls / chart
 
 Everything else (camera, layout, turntable) is shared and lives in builder.py and the
@@ -113,6 +114,10 @@ class RenderAdapter(object):
 
     def mtl_flat(self, name, rgb):
         raise NotImplementedError
+
+    def mtl_shadow_catcher(self, name):
+        """Optional: engines without it simply build the rig with no ground."""
+        raise NotImplementedError("%s: no shadow catcher material" % self.label)
 
     # --- shared, can be overridden -------------------------------------------
 

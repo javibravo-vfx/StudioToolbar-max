@@ -49,6 +49,24 @@ class VRayAdapter(RenderAdapter):
         set_prop(m, "diffuse_roughness", 0.0, self.log)
         return m
 
+    def mtl_shadow_catcher(self, name):
+        if max_class("VRayMtlWrapper") is None:
+            raise NotImplementedError("V-Ray: VRayMtlWrapper not found")
+        base = rt.VRayMtl()
+        base.name = name + "_base"
+        set_prop(base, "diffuse", color((0.18, 0.18, 0.18)), self.log)
+        set_prop(base, "reflection", rt.Color(0, 0, 0), self.log)
+        w = rt.VRayMtlWrapper()
+        w.name = name
+        set_first(w, ("baseMtl", "base_material"), base, self.log)
+        set_first(w, ("matte_surface", "matteSurface"), True, self.log)
+        set_first(w, ("alpha_contribution", "alphaContribution"), -1.0, self.log)
+        set_first(w, ("matte_shadows", "shadows"), True, self.log)
+        set_first(w, ("matte_shadowsAffectAlpha", "shadows_affect_alpha", "affect_alpha"),
+                  True, self.log)
+        set_first(w, ("generateGI", "generate_GI"), False, self.log)
+        return w
+
     def setup_ref_node(self, node, cast_shadows=False):
         super(VRayAdapter, self).setup_ref_node(node, cast_shadows)
         # Keep the references out of the asset's reflections / GI.

@@ -95,14 +95,29 @@ class LookdevRigDialog(QtWidgets.QDialog):
         lay.addWidget(self.lst_hdri, 1)
 
         opts = QtWidgets.QHBoxLayout()
-        self.chk_turntable = QtWidgets.QCheckBox("Turntable (object + HDRI)")
+        self.chk_turntable = QtWidgets.QCheckBox("Turntable")
+        self.chk_turntable.setToolTip("Object turn, then HDRI turn (frames from the preset)")
         self.chk_turntable.setChecked(True)
-        opts.addWidget(self.chk_turntable)
+        self.chk_ground = QtWidgets.QCheckBox("Shadow catcher")
+        self.chk_ground.setToolTip("Ground plane under the asset that only shows shadows")
+        self.chk_ground.setChecked(True)
+        self.chk_clay = QtWidgets.QCheckBox("Clay")
+        self.chk_clay.setToolTip("Grey override on the asset (refs untouched).\n"
+                                 "Turning it off puts the original materials back;\n"
+                                 "material edits made while clay is on are discarded.")
+        self.chk_clay.toggled.connect(self.on_clay)
+        for w in (self.chk_turntable, self.chk_ground, self.chk_clay):
+            opts.addWidget(w)
+            opts.addSpacing(10)
         opts.addStretch(1)
+        self.lbl_camera = QtWidgets.QLabel()
+        self.lbl_camera.setObjectName("dim")
+        opts.addWidget(self.lbl_camera)
+        lay.addLayout(opts)
+
         self.lbl_path = QtWidgets.QLabel(core.HDRI_DIR)
         self.lbl_path.setObjectName("dim")
-        opts.addWidget(self.lbl_path)
-        lay.addLayout(opts)
+        lay.addWidget(self.lbl_path)
 
         btns = QtWidgets.QHBoxLayout()
         b_folder = QtWidgets.QPushButton("Open folder")
@@ -161,6 +176,25 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self._log("No HDRIs in %s" % core.HDRI_DIR)
 
         self._select_stored()
+        self._sync_clay()
+        self._update_camera_label()
+
+    def _update_camera_label(self):
+        _geo, cam = builder._split_selection(list(rt.selection))
+        if cam is not None:
+            self.lbl_camera.setText("Camera: copy of %s" % cam.name)
+            self.lbl_camera.setToolTip("A camera is selected with the asset: the rig uses its framing")
+        else:
+            self.lbl_camera.setText("Camera: automatic framing")
+            self.lbl_camera.setToolTip("Select a camera together with the asset to use its framing")
+
+    def _sync_clay(self):
+        self.chk_clay.blockSignals(True)
+        try:
+            self.chk_clay.setChecked(builder.clay_is_on())
+        except Exception:  # noqa: BLE001
+            self.chk_clay.setChecked(False)
+        self.chk_clay.blockSignals(False)
 
     def _select_stored(self):
         """If the selected asset already has a stored setup, preselect it."""
@@ -168,6 +202,9 @@ class LookdevRigDialog(QtWidgets.QDialog):
         hdri, preset = builder.stored_settings(sel[0]) if sel else (None, None)
         if preset:
             self.cmb_preset.setCurrentText(preset)
+        if self.cmb_preset.currentText():
+            p = core.load_preset(self.cmb_preset.currentText())
+            self.chk_ground.setChecked(bool(p["ground"].get("shadow_catcher", True)))
         for i in range(self.lst_hdri.count()):
             if self.lst_hdri.item(i).data(QtCore.Qt.UserRole) == hdri:
                 self.lst_hdri.setCurrentRow(i)
@@ -195,9 +232,12 @@ class LookdevRigDialog(QtWidgets.QDialog):
         preset_name = self.cmb_preset.currentText() or "turntable_default"
         hdri = next(h for h in self._hdris if h.name == name)
 
-        overrides = None
-        if not self.chk_turntable.isChecked():
-            overrides = {"turntable": {"enabled": False}}
+        overrides = {
+            "turntable": {"enabled": self.chk_turntable.isChecked()},
+            "ground": {"shadow_catcher": self.chk_ground.isChecked()},
+            "clay": {"enabled": self.chk_clay.isChecked()},
+        }
+        self._update_camera_label()
         try:
             rig = builder.build(hdri, preset_name, overrides=overrides)
         except Exception as exc:  # noqa: BLE001
@@ -207,15 +247,29 @@ class LookdevRigDialog(QtWidgets.QDialog):
         msg = "Rig built · %s · %s · %d nodes" % (rig["adapter"], hdri.label, len(rig["nodes"]))
         if "render_range" in rig:
             msg += " · frames %d-%d" % rig["render_range"]
+        if rig.get("camera_source"):
+            msg += " · camera copied from %s" % rig["camera_source"]
         self._log(msg)
-        for line in rig["log"]:
+        for line in rig["warnings"] + rig["log"]:
             self._log(line)
+        self._sync_clay()
+
+    def on_clay(self, on):
+        try:
+            n = builder.set_clay(on)
+        except Exception as exc:  # noqa: BLE001
+            self._log("Clay: %s" % exc)
+            self._sync_clay()
+            return
+        rt.redrawViews()
+        self._log("Clay %s · %d objects" % ("on" if on else "off", n))
 
     def on_remove(self):
         with pymxs.undo(True, "Delete Lookdev Rig"):
             builder.remove_rig()
         rt.redrawViews()
-        self._log("Rig deleted.")
+        self._sync_clay()
+        self._log("Rig deleted (asset materials restored).")
 
 
 def show():

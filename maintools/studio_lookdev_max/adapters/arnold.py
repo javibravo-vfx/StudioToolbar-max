@@ -66,6 +66,15 @@ class ArnoldAdapter(RenderAdapter):
         set_prop(m, "specular", 0.0, self.log)                   # pure diffuse
         return m
 
+    def mtl_shadow_catcher(self, name):
+        cls = max_class("ai_shadow_matte")
+        if cls is None:
+            raise NotImplementedError("Arnold: ai_shadow_matte not found")
+        m = cls()
+        m.name = name
+        set_prop(m, "shadow_opacity", 1.0, self.log)
+        return m
+
     def setup_ref_node(self, node, cast_shadows=False):
         super(ArnoldAdapter, self).setup_ref_node(node, cast_shadows)
         # Per-ray visibility lives in the node's Arnold Properties (MAXtoA).

@@ -4,18 +4,25 @@ Lookdev Rig for 3ds Max — rig construction.
 From the Python Listener:
     from studio_lookdev_max import builder
     builder.build("studio_softbox_4k")            # on the current selection
+    builder.set_clay(True)                        # grey override on the asset
     builder.remove_rig()
 
 Hierarchy it creates (layer LOOKDEV_RIG, every node prefixed LKD_):
 
     LKD_root  (Dummy at the asset centre; spins during the "object" pass)
-     |- LKD_cam                (Free camera framing the bounding sphere)
+     |- LKD_cam                (Free camera: framed automatically, or a copy of the
+     |   |                      camera selected with the asset)
      |   |- LKD_chrome         (chrome ball, fixed size on screen)
      |   |- LKD_grey18         (18% grey ball)
      |   '- LKD_chart_board    (procedural 24-patch ColorChecker)
-     '- LKD_dome               (dome light with the HDRI; spins only during the "HDRI" pass)
+     |- LKD_dome               (dome light with the HDRI; spins only during the "HDRI" pass)
+     '- LKD_shadow_catcher     (ground plane under the asset that only shows shadows)
+    LKD_store (hidden Dummy: remembers the asset and its materials while clay is on)
 
-The asset itself is never modified (apart from two user props with the HDRI/preset used).
+The asset is never modified, except:
+  - two user props with the HDRI / preset used;
+  - clay mode: its materials are swapped for a grey one and stored on LKD_store,
+    and put back when clay is turned off or the rig is deleted.
 """
 
 import math
@@ -37,6 +44,63 @@ from .adapters.base import is_undefined, set_prop   # noqa: E402
 
 P = core.RIG_PREFIX
 UP_AXIS = "Z"
+STORE_NAME = P + "store"
+CLAY_MTL_NAME = P + "mtl_clay"
+
+# Custom attribute on LKD_store. Lives in the .max file, so a scene saved with clay on
+# can still restore the original materials in a later session.
+_MS_DEFS = r"""
+global LKD_ClayStoreCA = attributes LKD_ClayStore attribID:#(0x4c4b4431, 0x436c6179)
+(
+    parameters main
+    (
+        assets    type:#nodeTab     tabSizeVariable:true
+        clayNodes type:#nodeTab     tabSizeVariable:true
+        clayMtls  type:#materialTab tabSizeVariable:true
+        clayHad   type:#boolTab     tabSizeVariable:true
+    )
+)
+global LKD_setAssets
+fn LKD_setAssets store arr = ( store.assets = arr; arr.count )
+global LKD_clayApply
+fn LKD_clayApply store clay =
+(
+    if store.clayNodes.count > 0 do return 0
+    local n = 0
+    for a in store.assets where isValidNode a do
+    (
+        local had = (a.material != undefined)
+        append store.clayNodes a
+        append store.clayHad had
+        append store.clayMtls (if had then a.material else clay)
+        a.material = clay
+        n += 1
+    )
+    n
+)
+global LKD_clayRestore
+fn LKD_clayRestore store =
+(
+    local n = 0
+    for i = 1 to store.clayNodes.count do
+    (
+        local a = store.clayNodes[i]
+        if isValidNode a do
+        (
+            a.material = if store.clayHad[i] then store.clayMtls[i] else undefined
+            n += 1
+        )
+    )
+    store.clayNodes = #()
+    store.clayMtls = #()
+    store.clayHad = #()
+    n
+)
+"""
+
+
+def _ensure_ms_defs():
+    rt.execute(_MS_DEFS)
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +109,10 @@ UP_AXIS = "Z"
 
 def _p3(v):
     return rt.Point3(float(v[0]), float(v[1]), float(v[2]))
+
+
+def _v3(p):
+    return (float(p.x), float(p.y), float(p.z))
 
 
 def _cam_matrix(frame, pos=None):
@@ -61,8 +129,14 @@ def rig_nodes():
     return [n for n in rt.objects if _is_rig(n)]
 
 
+def _store():
+    n = rt.getNodeByName(STORE_NAME)
+    return None if is_undefined(n) else n
+
+
 def remove_rig():
-    """Deletes the whole rig (only nodes prefixed LKD_)."""
+    """Puts the asset materials back (if clay is on) and deletes every LKD_ node."""
+    set_clay(False)
     for n in rig_nodes():
         if rt.isValidNode(n):
             rt.delete(n)
@@ -112,10 +186,33 @@ def _set_z_rotation(node_name, degrees):
                % (_ms_str(node_name), degrees))
 
 
+def _split_selection(nodes):
+    """(geometry, user camera or None) from the selection, ignoring rig nodes."""
+    geo, cams = [], []
+    for n in nodes:
+        if _is_rig(n):
+            continue
+        sc = rt.superClassOf(n)
+        if sc == rt.GeometryClass:
+            geo.append(n)
+        elif sc == rt.camera:
+            cams.append(n)
+    return geo, (cams[0] if cams else None)
+
+
+def _frame_from_camera(cam, bmin, bmax, aspect):
+    """Frame matching an existing camera (any type: Free, Physical, V-Ray...)."""
+    rt.viewport.setCamera(cam)                     # viewport FOV = camera FOV for every type
+    hfov = math.radians(float(rt.getViewFOV()))
+    tm = cam.transform
+    return core.camera_frame_from_existing(
+        _v3(tm.row4), _v3(tm.row1), _v3(tm.row2), _v3(tm.row3), hfov, aspect, bmin, bmax)
+
+
 def _animate_turntable(root_name, dome_name, timing, hdri_offset):
     """
-    Object pass: the root (camera + refs + dome) orbits 360° -> the asset turns under fixed light.
-    HDRI pass: the root holds still and only the dome spins 360°.
+    Object pass: the root (camera + refs + dome + ground) orbits 360° -> the asset turns
+    under fixed light. HDRI pass: the root holds still and only the dome spins 360°.
     Linear keys; the user's default tangent type is restored afterwards.
     """
     s, oe, he = timing.start, timing.object_end, timing.hdri_end
@@ -145,6 +242,48 @@ def _animate_turntable(root_name, dome_name, timing, hdri_offset):
 
 
 # ---------------------------------------------------------------------------
+# Clay override
+# ---------------------------------------------------------------------------
+
+def clay_is_on():
+    st = _store()
+    if st is None:
+        return False
+    _ensure_ms_defs()
+    try:
+        return int(st.clayNodes.count) > 0
+    except Exception:  # noqa: BLE001  (store without the attribute)
+        return False
+
+
+def set_clay(on, albedo=None):
+    """
+    Clay ON: the asset's materials are stored on LKD_store and replaced by a grey
+    diffuse (albedo from the preset, 0.18 by default). The rig refs are not touched.
+    Clay OFF: original materials go back. Returns the number of objects changed.
+    Material edits made on the asset while clay is on are discarded when it is restored.
+    """
+    st = _store()
+    if st is None:
+        if on:
+            raise RuntimeError("Build the rig first.")
+        return 0
+    _ensure_ms_defs()
+    if not on:
+        with pymxs.undo(True, "Lookdev clay off"):
+            return int(rt.LKD_clayRestore(st))
+    if clay_is_on():
+        return 0
+    adapter = adapters.detect()
+    pname = rt.getUserProp(st, core.USER_PROP_PRESET)
+    preset = core.load_preset("turntable_default" if is_undefined(pname) else str(pname))
+    value = float(albedo if albedo is not None else preset["clay"].get("albedo", 0.18))
+    with pymxs.undo(True, "Lookdev clay on"):
+        clay = adapter.mtl_flat(CLAY_MTL_NAME, core.grey(value, preset["working_space"]))
+        return int(rt.LKD_clayApply(st, clay))
+
+
+# ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 
@@ -153,33 +292,40 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
     """
     Builds (or rebuilds) the lookdev rig around `nodes` (default: selection).
 
+    If a camera is selected together with the asset, the rig uses its framing: LKD_cam is
+    a copy of it (same transform and FOV) so the turntable never touches the original.
+
     hdri: library name, path to an .exr/.hdr, or core.HDRI.
     overrides: dict merged over the preset for this build only,
-               e.g. {"turntable": {"enabled": False}}.
+               e.g. {"turntable": {"enabled": False}, "ground": {"shadow_catcher": False}}.
     Returns a dict with the created nodes and the log of properties that could not be set.
     """
     src = list(nodes) if nodes is not None else list(rt.selection)
-    geo = [n for n in src if not _is_rig(n) and rt.superClassOf(n) == rt.GeometryClass]
+    geo, user_cam = _split_selection(src)
     if not geo:
         raise ValueError("Select at least one geometry object (not part of the rig).")
 
     hdri = _resolve_hdri(hdri)
-    preset = core.load_preset(preset_name)
-    if overrides:
-        preset = core._deep_merge(preset, overrides)
+    preset = core.merge(core.load_preset(preset_name), overrides)
     adapter = adapters.detect()
     ws = preset["working_space"]
+    aspect = _render_aspect()
 
     bmin, bmax = _bounds(geo)
-    frame = core.camera_frame(bmin, bmax, preset, _render_aspect(), up_axis=UP_AXIS)
+    if user_cam is not None:
+        frame = _frame_from_camera(user_cam, bmin, bmax, aspect)
+    else:
+        frame = core.camera_frame(bmin, bmax, preset, aspect, up_axis=UP_AXIS)
     layout = core.reference_layout(frame, preset)
     cast_shadows = bool(preset["refs"].get("cast_shadows", False))
 
     rig = {"adapter": adapter.name, "hdri": hdri.name, "preset": preset["_name"],
-           "nodes": [], "refs": []}
+           "camera_source": str(user_cam.name) if user_cam is not None else None,
+           "nodes": [], "refs": [], "warnings": []}
 
     with pymxs.undo(True, "Lookdev Rig"):
         remove_rig()
+        _ensure_ms_defs()
         lyr = _layer()
 
         def keep(node):
@@ -187,13 +333,22 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
             rig["nodes"].append(node)
             return node
 
+        # Store: remembers the asset (and its materials while clay is on)
+        store = keep(rt.Dummy())
+        store.name = STORE_NAME
+        store.boxsize = _p3((frame.radius * 0.05,) * 3)
+        rt.custAttributes.add(store, rt.LKD_ClayStoreCA)
+        rt.LKD_setAssets(store, geo)
+        rt.setUserProp(store, core.USER_PROP_PRESET, preset["_name"])
+        store.isHidden = True
+
         # Root at the asset centre
         root = keep(rt.Dummy())
         root.name = P + "root"
         root.boxsize = _p3((frame.radius * 0.25,) * 3)
         root.position = _p3(frame.target)
 
-        # Camera
+        # Camera (automatic framing, or a copy of the selected camera)
         cam = keep(rt.Freecamera())
         cam.name = P + "cam"
         set_prop(cam, "fovType", 1)                 # horizontal FOV
@@ -206,6 +361,26 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
         dome = keep(adapter.create_dome(hdri.path, intensity, P + "dome"))
         dome.position = _p3(frame.target)
         dome.parent = root
+
+        # Shadow catcher (orbits with the rig: ground and light stay fixed to the camera,
+        # exactly like a real object turning on a turntable)
+        if preset["ground"].get("shadow_catcher", True):
+            try:
+                mtl_ground = adapter.mtl_shadow_catcher(P + "mtl_shadow_catcher")
+            except NotImplementedError as exc:
+                rig["warnings"].append("No shadow catcher: %s" % exc)
+            else:
+                g = core.ground_plane(bmin, bmax, preset, up_axis=UP_AXIS)
+                ground = keep(rt.Plane())
+                ground.name = P + "shadow_catcher"
+                ground.width = ground.length = g["size"]
+                ground.widthsegs = ground.lengthsegs = 1
+                ground.position = _p3(g["pos"])
+                ground.material = mtl_ground
+                ground.castShadows = False
+                ground.receiveShadows = True
+                ground.parent = root
+                rig["ground"] = ground
 
         # Shared materials
         mtl_chrome = adapter.mtl_chrome(P + "mtl_chrome")
@@ -265,17 +440,21 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
             rt.setUserProp(n, core.USER_PROP_HDRI, hdri.name)
             rt.setUserProp(n, core.USER_PROP_PRESET, preset["_name"])
 
-        rig.update({"root": root, "camera": cam, "dome": dome, "frame": frame})
+        rig.update({"root": root, "camera": cam, "dome": dome, "store": store,
+                    "frame": frame})
         adapter.after_build(rig)
+
+    if preset["clay"].get("enabled", False):
+        rig["clay"] = set_clay(True)
 
     if set_viewport:
         rt.viewport.setCamera(cam)
         rt.redrawViews()
 
     rig["log"] = list(adapter.log)
-    if adapter.log:
-        print("[Lookdev Rig] Properties not applied (%s):" % adapter.label)
-        for line in adapter.log:
+    if adapter.log or rig["warnings"]:
+        print("[Lookdev Rig] %s:" % adapter.label)
+        for line in rig["warnings"] + adapter.log:
             print(line)
     return rig
 

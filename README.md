@@ -13,7 +13,7 @@ Designed for VFX studios — manages resolution, film size, FPS, pipeline naviga
 
 | Section | What it does |
 |---|---|
-| **Tools** | Quick-launch buttons: Overscan, Image Plane, Remove Background, **Paste Cam** (creates the camera copied from 3D Camera Pin), **Lookdev Rig** (camera, chrome/grey balls, colour chart and HDRI dome turntable around the selection), Studio Library — plus a **TOOLS ▾** menu with Show Textures, Bake Camera and every script in `tools/` (subfolders become submenus). Right-click the toolbar background for Show Textures / Bake Camera / Pipeline Setup |
+| **Tools** | Quick-launch buttons: Overscan, Image Plane, Remove Background, **Paste Cam** (creates the camera copied from 3D Camera Pin), **Lookdev Rig** (camera, chrome/grey balls, colour chart, shadow catcher and HDRI dome turntable around the selection; uses a selected camera's framing; clay toggle), Studio Library — plus a **TOOLS ▾** menu with Show Textures, Bake Camera and every script in `tools/` (subfolders become submenus). Right-click the toolbar background for Show Textures / Bake Camera / Pipeline Setup |
 | **Resolution** | W×H spinners, live aspect ratio, aspect lock, ×2 / ½. Preset list (arrow inside the label field) with your saved presets and standard formats (HD, UHD, DCI 2K/4K, Scope, square, vertical…) |
 | **Film gate** | Reads/writes aperture for Standard, V-Ray and Physical cameras. Preset list includes common cinema sensor widths (ARRI Alexa 35 / Mini / Mini LF, RED V-Raptor / Komodo, Sony Venice 2, Blackmagic, Super 35…) |
 | **FPS / Units** | Live sync; click FPS to switch frame rate |

@@ -26,7 +26,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.8.9"
+VERSION = "2.9.0"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -1687,7 +1687,7 @@ class StudioToolbar(QtWidgets.QWidget):
         act.setToolTip("Toggles texture display for every material in the viewport")
         act.triggered.connect(lambda: self._run_smart_script(PATH_TEXTURES))
         act = menu.addAction("Bake Camera")
-        act.setToolTip("Select an Alembic camera — bakes its transform and FOV into a native Free Camera")
+        act.setToolTip("Select any camera (Alembic too) — bakes its transform and FOV into a native Standard, Physical or V-Ray camera")
         act.triggered.connect(lambda: self._run_smart_script(PATH_BAKE_CAM))
         menu.addSeparator()
 

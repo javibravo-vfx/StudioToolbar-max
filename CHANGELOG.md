@@ -1,5 +1,12 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.9.0
+- **Bake Camera, rewritten (STM_BakeAlembic v2.0.0):** bakes any camera — an Alembic camera from Nuke, a camera with constraints, linked or on a path, a target camera — into a native editable camera with a key per frame, without the intermediate "linked camera" step
+  - Fix: it baked a single frame and missed the FOV and the animation of Alembic cameras. Alembic objects only update at the scene time, so it now moves the time slider frame by frame (like a manual bake) and reads the FOV from the viewport looking through the source — works for any camera type, also Alembic ones whose parameters can't be seen
+  - Window: **Bake to** Standard (Free Camera), Physical Camera or V-Ray Physical Camera (when installed; the choice is remembered), film width for Physical / V-Ray (focal length from the FOV; taken from the source when it has one), frame range (animation range by default), remove scale from the transform (on)
+  - FOV / focal keys only when it changes; one Undo record ("Bake Camera"); progress bar with Cancel; the viewport and the time slider go back as they were
+  - Selecting the Alembic container / xform also works: it finds the camera under it
+
 ## v2.8.9
 - **Paste Cam reads BackplateLab cameras too:** the camera copied with BackplateLab's Copy button (target 3ds Max, Free or Physical camera) is created like the 3D Camera Pin one. Before, it warned "There is no Camera Pin camera in the clipboard" because BackplateLab names itself in the first line
   - It only runs the clipboard when its first line is a MAXScript comment (`--`) naming Camera Pin or BackplateLab, so the Nuke / Maya exports and other text are not run

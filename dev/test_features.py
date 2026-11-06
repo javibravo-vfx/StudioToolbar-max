@@ -160,12 +160,25 @@ clip.setText(SCRIPT)
 pymxs.UNDO_LABELS.clear()
 mgr2._paste_camera_pin()
 check("paste cam: executes clipboard script", executed == [SCRIPT])
-check("paste cam: wrapped in one undo", pymxs.UNDO_LABELS == ["Paste Camera Pin"], str(pymxs.UNDO_LABELS))
+check("paste cam: wrapped in one undo", pymxs.UNDO_LABELS == ["Paste Camera Pin camera"], str(pymxs.UNDO_LABELS))
 check("paste cam: status shows camera name", "Camera pasted" in mgr2.status_lbl.text() and "CAM_plate" in mgr2.status_lbl.text(),
       mgr2.status_lbl.text())
 check("paste cam: full name in history", any("CAM_plate_0042" in e[3] for e in mgr2._status_log))
+# BackplateLab exports the same MAXScript with its own name in the header
+rt.execute = lambda code: (executed.append(code), _Cam())[1]
+executed.clear(); pymxs.UNDO_LABELS.clear()
+BPL = "-- BackplateLab · plate.exr 1920x1080 · film back 36.700 × 20.644 mm · focal 35.000 mm · RMS –\n-- Meters, Z up.\n(\n  local cam = Freecamera name:\"CAM_plate_0042\" fovType:1 fov:54.4\n  cam\n)\n"
+clip.setText(BPL)
+mgr2._paste_camera_pin()
+check("paste cam: BackplateLab script executed", executed == [BPL])
+check("paste cam: BackplateLab undo label", pymxs.UNDO_LABELS == ["Paste BackplateLab camera"], str(pymxs.UNDO_LABELS))
+# the Nuke / Maya exports (# comments) and text that only mentions the apps are not run
+for bad in ["# BackplateLab · plate 1920x1080\nCamera2 {\n}", "see Camera Pin docs\n-- Camera Pin", "box pos:[0,0,0] -- BackplateLab"]:
+    executed.clear(); clip.setText(bad); mgr2._paste_camera_pin()
+    check("paste cam: not a Max camera script → warning: " + bad.splitlines()[0][:30], _Box.LOG[-1][0] == "warning" and not executed)
 def _boom(code): raise RuntimeError("-- Syntax error: at bad")
 rt.execute = _boom
+clip.setText(BPL)
 mgr2._paste_camera_pin()
 check("paste cam: script error → critical dialog + red status", _Box.LOG[-1][0] == "critical" and "error" in mgr2.status_lbl.text().lower())
 check("paste cam: button on the bar, textures button gone",

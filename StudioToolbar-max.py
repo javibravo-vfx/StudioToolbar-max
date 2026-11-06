@@ -26,7 +26,7 @@ from pymxs import runtime as rt
 from qtmax import GetQMaxMainWindow
 from datetime import datetime
 
-VERSION = "2.8.8"
+VERSION = "2.8.9"
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║                        USER CONFIG                              ║
@@ -543,7 +543,7 @@ def _svg_textures(base, accent):
 </svg>"""
 
 def _svg_pastecam(base, accent):
-    """Paste Cam — camera body with a down arrow (import / paste from Camera Pin)."""
+    """Paste Cam — camera body with a down arrow (import / paste from Camera Pin or BackplateLab)."""
     return f"""<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
   <rect x="1.5" y="10" width="14" height="10.5" rx="1.2" fill="none" stroke="{base}" stroke-width="1.4"/>
   <polyline points="15.5,13 22.5,10 22.5,20.5 15.5,17.5" fill="none" stroke="{base}" stroke-width="1.3" stroke-linejoin="round"/>
@@ -1271,7 +1271,7 @@ class StudioToolbar(QtWidgets.QWidget):
         self.btn_overscan.setToolTip("Overscan\nAdjusts camera overscan — adds bleed area outside the render frame")
         self.btn_img_plane.setToolTip("Image Plane\nCreates a reference image plane inside the active viewport")
         self.btn_rem_back.setToolTip("Remove Background\nRemoves/hides the environment background from the scene")
-        self.btn_paste_cam.setToolTip("Paste Cam: creates the camera copied from 3D Camera Pin")
+        self.btn_paste_cam.setToolTip("Paste Cam: creates the camera copied from 3D Camera Pin or BackplateLab")
         self.btn_lookdev.setToolTip("Lookdev Rig\nSelect an asset — builds camera, chrome/grey balls, colour chart and HDRI dome (turntable)")
         self.btn_library.setToolTip("Studio Library MAX\nOpens the pose/animation library manager")
 
@@ -1717,23 +1717,36 @@ class StudioToolbar(QtWidgets.QWidget):
         a.triggered.connect(self._open_setup)
         m.exec(self.mapToGlobal(pos))
 
-    # ── Paste Cam (3D Camera Pin) ────────────────────────────────────────────
-    CAMERA_PIN_TAG = "Camera Pin"
+    # ── Paste Cam (3D Camera Pin / BackplateLab) ─────────────────────────────
+    # Both apps copy the same MAXScript; its first line is a comment naming the app:
+    #   -- Camera Pin · plate.exr 1920x1080 · ...      (3D Camera Pin)
+    #   -- BackplateLab · plate.exr 1920x1080 · ...    (BackplateLab)
+    CAMERA_SOURCES = ("Camera Pin", "BackplateLab")
+
+    @classmethod
+    def _camera_source(cls, text):
+        """The app that copied the camera, read from the first line, or "" if it isn't a camera script."""
+        first = next((l.strip() for l in (text or "").splitlines() if l.strip()), "")
+        if not first.startswith("--"):
+            return ""
+        return next((src for src in cls.CAMERA_SOURCES if src in first), "")
 
     def _paste_camera_pin(self):
-        """Creates the camera copied with 3D Camera Pin's Copy button (a MAXScript in the clipboard)."""
+        """Creates the camera copied with the Copy button of 3D Camera Pin or BackplateLab (a MAXScript in the clipboard)."""
         text = QtWidgets.QApplication.clipboard().text() or ""
-        if not text.strip() or self.CAMERA_PIN_TAG not in text:
+        source = self._camera_source(text)
+        if not source:
             QtWidgets.QMessageBox.warning(self, "Paste Cam",
-                                          "There is no Camera Pin camera in the clipboard.")
+                                          "There is no Camera Pin or BackplateLab camera in the clipboard.\n\n"
+                                          "Copy it with the Copy button, with the target set to 3ds Max.")
             return
         try:
-            with pymxs.undo(True, "Paste Camera Pin"):
+            with pymxs.undo(True, f"Paste {source} camera"):
                 result = rt.execute(text)
         except Exception as e:
             self._set_status("Paste Cam error", "#e06060", str(e))
             QtWidgets.QMessageBox.critical(self, "Paste Cam",
-                                           f"The Camera Pin script failed:\n\n{e}")
+                                           f"The {source} script failed:\n\n{e}")
             return
         name = ""
         try:

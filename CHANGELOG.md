@@ -1,5 +1,11 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.8.9
+- **Paste Cam reads BackplateLab cameras too:** the camera copied with BackplateLab's Copy button (target 3ds Max, Free or Physical camera) is created like the 3D Camera Pin one. Before, it warned "There is no Camera Pin camera in the clipboard" because BackplateLab names itself in the first line
+  - It only runs the clipboard when its first line is a MAXScript comment (`--`) naming Camera Pin or BackplateLab, so the Nuke / Maya exports and other text are not run
+  - Undo record named after the app ("Paste Camera Pin camera" / "Paste BackplateLab camera")
+- `dev/test_features.py`: BackplateLab checks
+
 ## v2.8.8
 - Lookdev Rig: previews / blurred backgrounds / defaults of other HDRI folders now go to the studio drive, `T:\.studio-toolbar\shared\lookdev\_library_cache\` (one sub-folder per library) instead of each user's profile — generated once for everybody, easy to wipe (Refresh library rebuilds them). New **Refresh library ▾ → Open cache folder**
 

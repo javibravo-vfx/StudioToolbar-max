@@ -1,5 +1,8 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.9.4
+- **Lookdev Rig: dragging a thumbnail replaces the path of the map** instead of adding it after the one it had: on Windows the drag is now the same one Explorer makes for the file (the drag of Qt also carried the path as text, and the path field pasted it after its own)
+
 ## v2.9.3
 - **Lookdev Rig: double-click a thumbnail with a dome light selected puts that HDRI on the light** (the same as right-click › Apply on selected light). With no dome light of the scene selected, double-click builds the rig as before
 - **Dragging a thumbnail out of the library works:** the grid turned dragging off when it was set to icons, so the drag never started

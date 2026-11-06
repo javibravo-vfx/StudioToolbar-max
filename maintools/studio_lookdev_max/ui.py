@@ -18,6 +18,7 @@ options are remembered per user in ~/.studio-toolbar/lookdev_rig.ini.
 import configparser
 import json
 import os
+import sys
 
 import pymxs
 
@@ -336,6 +337,59 @@ class _SliderRow(QtWidgets.QWidget):
 
 
 # ── window ───────────────────────────────────────────────────────────────────
+def _shell_drag(path, hwnd=None):
+    """
+    Drags `path` exactly as Explorer does (Windows): the data object of the shell for that file and
+    SHDoDragDrop. A Qt drag always carries the path as text as well, and a path field of 3ds Max
+    pastes that text where it is dropped, after the path it had; with the shell's object, Max takes
+    the file and replaces the path. Returns False if it could not be done (then the Qt drag is used).
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    from ctypes import wintypes, byref, c_void_p, c_wchar_p, POINTER
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("d1", ctypes.c_ulong), ("d2", ctypes.c_ushort), ("d3", ctypes.c_ushort),
+                    ("d4", ctypes.c_ubyte * 8)]
+
+    ole32 = ctypes.OleDLL("ole32")
+    shell32 = ctypes.OleDLL("shell32")
+
+    def guid(text):
+        g = GUID()
+        ole32.CLSIDFromString(c_wchar_p(text), byref(g))
+        return g
+
+    def method(ptr, index, restype, *argtypes):
+        vtbl = ctypes.cast(ptr, POINTER(POINTER(c_void_p))).contents
+        return ctypes.WINFUNCTYPE(restype, c_void_p, *argtypes)(vtbl[index])
+
+    item, data = c_void_p(), c_void_p()
+    try:
+        shell32.SHCreateItemFromParsingName.argtypes = [c_wchar_p, c_void_p, POINTER(GUID), POINTER(c_void_p)]
+        shell32.SHCreateItemFromParsingName(os.path.normpath(path), None,
+                                            byref(guid("{43826d1e-e718-42ee-bc55-a1e261c37bfe}")), byref(item))
+        # IShellItem::BindToHandler(pbc, BHID_DataObject, IID_IDataObject, &data)
+        bind = method(item, 3, ctypes.HRESULT, c_void_p, POINTER(GUID), POINTER(GUID), POINTER(c_void_p))
+        bind(item, None, byref(guid("{B8C0BD9F-ED24-455c-83E6-D5390C4FE8C4}")),
+             byref(guid("{0000010e-0000-0000-C000-000000000046}")), byref(data))
+        effect = wintypes.DWORD(0)
+        shell32.SHDoDragDrop.argtypes = [wintypes.HWND, c_void_p, c_void_p, wintypes.DWORD, POINTER(wintypes.DWORD)]
+        shell32.SHDoDragDrop(hwnd, data, None, 1, byref(effect))  # 1 = DROPEFFECT_COPY
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print("Lookdev Rig: shell drag failed, using the Qt drag: %s" % exc)
+        return False
+    finally:
+        for ptr in (data, item):
+            if ptr.value:
+                try:
+                    method(ptr, 2, ctypes.c_ulong)(ptr)  # Release
+                except Exception:  # noqa: BLE001
+                    pass
+
+
 class _HdriGrid(QtWidgets.QListWidget):
     """The library grid: a thumbnail can be dragged out as its file (onto a Bitmap / VRayBitmap map slot or a
     path field of 3ds Max, onto Explorer…), like dragging the .exr / .hdr from a folder."""
@@ -360,19 +414,24 @@ class _HdriGrid(QtWidgets.QListWidget):
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
 
     def mimeTypes(self):
-        return ["text/uri-list", "text/plain"]
+        return ["text/uri-list"]
 
     def mimeData(self, items):
         paths = [os.path.normpath(p) for p in (it.data(self.PATH_ROLE) for it in items) if p]
         md = QtCore.QMimeData()
         md.setUrls([QtCore.QUrl.fromLocalFile(p) for p in paths])
-        md.setText("\n".join(paths))
         return md
 
     def startDrag(self, actions):
         it = self.currentItem()
         md = self.mimeData(self.selectedItems() or ([it] if it else []))
         if not md.urls():
+            return
+        try:
+            hwnd = int(self.window().winId())
+        except Exception:  # noqa: BLE001
+            hwnd = None
+        if _shell_drag(md.urls()[0].toLocalFile(), hwnd):
             return
         drag = QtGui.QDrag(self)
         drag.setMimeData(md)

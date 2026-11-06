@@ -45,7 +45,7 @@ if _SHARED not in sys.path:
 
 from studio_lookdev import core          # noqa: E402
 from . import adapters                    # noqa: E402
-from .adapters.base import is_undefined, set_prop   # noqa: E402
+from .adapters.base import is_undefined, set_prop, set_first, max_class   # noqa: E402
 
 P = core.RIG_PREFIX
 UP_AXIS = "Z"
@@ -868,6 +868,83 @@ def build(hdri, preset_name="turntable_default", nodes=None, set_viewport=True,
         for line in rig["warnings"] + adapter.log:
             print(line)
     return rig
+
+
+# ---------------------------------------------------------------------------
+# The library as a collection for any dome in the scene (not only the rig's)
+# ---------------------------------------------------------------------------
+
+def _dome_kind(node):
+    """'vray' / 'arnold' / 'generic' for a dome light, None for anything else."""
+    cls = str(rt.classOf(node))
+    if cls == "VRayLight":
+        t = rt.getProperty(node, "type") if rt.isProperty(node, "type") else None
+        return "vray" if t == 1 else None                       # 1 = dome
+    if cls == "Arnold_Light":
+        from .adapters.arnold import ARNOLD_SKYDOME
+        for p in ("shapeType", "shape_type", "type"):
+            if rt.isProperty(node, p):
+                return "arnold" if int(rt.getProperty(node, p)) == ARNOLD_SKYDOME else None
+        return None
+    # other engines (Corona, Redshift, …): a light with a texture slot
+    if rt.superClassOf(node) == rt.light and any(rt.isProperty(node, p) for p in adapters.base.RenderAdapter.TEXMAP_PROPS):
+        return "generic"
+    return None
+
+
+def _new_hdri_map(kind, path, name):
+    log = []
+    if kind == "arnold":
+        return adapters.arnold.ArnoldAdapter()._hdri_map(path, name)
+    cls = max_class("VRayBitmap", "VRayHDRI") if kind == "vray" else None
+    if cls is not None:
+        tex = cls()
+        set_first(tex, ("HDRIMapName", "filename"), path, log)
+        set_prop(tex, "mapType", 2, log)                         # 2 = spherical
+    else:
+        tex = rt.Bitmaptexture()
+        tex.filename = path
+        tex.coords.mappingType = 1                               # Environ
+        tex.coords.mapping = 0                                   # Spherical Environment
+    tex.name = name + "_map"
+    return tex
+
+
+def apply_hdri_to_nodes(path, nodes=None):
+    """
+    Puts the HDRI `path` on the dome lights among `nodes` (default: the selection), rig or not:
+    the file of the texture the dome already has changes (its mapping, rotation and other
+    settings stay); a dome without a texture gets a spherical map with it.
+    Returns (names of the domes changed, names of the nodes skipped).
+    """
+    path = os.path.normpath(str(path))
+    done, skipped = [], []
+    targets = list(nodes) if nodes is not None else list(rt.selection)
+    with pymxs.undo(True, "Apply HDRI"):
+        for n in targets:
+            kind = _dome_kind(n)
+            if kind is None:
+                skipped.append(str(n.name))
+                continue
+            tex = None
+            for p in adapters.base.RenderAdapter.TEXMAP_PROPS:
+                if rt.isProperty(n, p):
+                    v = rt.getProperty(n, p)
+                    if not is_undefined(v):
+                        tex = v
+                        break
+            ok = False
+            if tex is not None:
+                ok = set_first(tex, adapters.base.RenderAdapter.FILENAME_PROPS, path, []) is not None
+            if not ok:
+                tex = _new_hdri_map(kind, path, str(n.name))
+                ok = set_first(n, adapters.base.RenderAdapter.TEXMAP_PROPS, tex, []) is not None
+                set_first(n, ("texmap_on", "texmapOn", "use_texmap", "useTexmap"), True, [])
+                if kind == "arnold":
+                    set_first(n, ("useColor", "use_color"), False, [])
+            (done if ok else skipped).append(str(n.name))
+    rt.redrawViews()
+    return done, skipped
 
 
 def stored_settings(node):

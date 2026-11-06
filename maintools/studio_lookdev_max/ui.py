@@ -336,6 +336,42 @@ class _SliderRow(QtWidgets.QWidget):
 
 
 # ── window ───────────────────────────────────────────────────────────────────
+class _HdriGrid(QtWidgets.QListWidget):
+    """The library grid: a thumbnail can be dragged out as its file (onto a Bitmap / VRayBitmap map slot or a
+    path field of 3ds Max, onto Explorer…), like dragging the .exr / .hdr from a folder."""
+
+    PATH_ROLE = QtCore.Qt.UserRole + 1
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
+        self.setDefaultDropAction(QtCore.Qt.CopyAction)
+
+    def mimeTypes(self):
+        return ["text/uri-list", "text/plain"]
+
+    def mimeData(self, items):
+        paths = [os.path.normpath(p) for p in (it.data(self.PATH_ROLE) for it in items) if p]
+        md = QtCore.QMimeData()
+        md.setUrls([QtCore.QUrl.fromLocalFile(p) for p in paths])
+        md.setText("\n".join(paths))
+        return md
+
+    def startDrag(self, actions):
+        it = self.currentItem()
+        md = self.mimeData(self.selectedItems() or ([it] if it else []))
+        if not md.urls():
+            return
+        drag = QtGui.QDrag(self)
+        drag.setMimeData(md)
+        if it is not None and not it.icon().isNull():
+            pm = it.icon().pixmap(160, 80)
+            drag.setPixmap(pm)
+            drag.setHotSpot(QtCore.QPoint(pm.width() // 2, pm.height() // 2))
+        drag.exec(QtCore.Qt.CopyAction)
+
+
 class LookdevRigDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(LookdevRigDialog, self).__init__(parent or _max_main_window())
@@ -446,7 +482,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         return self.sidebar
 
     def _build_grid(self):
-        self.grid = QtWidgets.QListWidget()
+        self.grid = _HdriGrid()
         self.grid.setObjectName("grid")
         self.grid.setViewMode(QtWidgets.QListView.IconMode)
         self.grid.setResizeMode(QtWidgets.QListView.Adjust)
@@ -835,7 +871,9 @@ class LookdevRigDialog(QtWidgets.QDialog):
                     pm = _placeholder(256, 128, "no preview")
                 it = QtWidgets.QListWidgetItem(QtGui.QIcon(pm), h.label)
                 it.setData(QtCore.Qt.UserRole, h.name)
-                it.setToolTip("%s\n%s" % (h.label, h.path))
+                it.setData(_HdriGrid.PATH_ROLE, h.path)
+                it.setToolTip("%s\n%s\n\nDrag it onto a Bitmap / VRayBitmap map slot, or right-click › "
+                              "Apply on selected light" % (h.label, h.path))
                 it.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
                 self.grid.addItem(it)
             if not self._hdris:
@@ -1073,12 +1111,34 @@ class LookdevRigDialog(QtWidgets.QDialog):
         if h is None:
             return
         m = QtWidgets.QMenu(self)
+        m.setToolTipsVisible(True)
         m.addAction("Build rig with this HDRI", self.on_build)
         a = m.addAction("Use on the rig", lambda: self.on_hdri_changed(force=True))
         a.setEnabled(builder.hdri_state() is not None)
         m.addSeparator()
+        # the library as a collection for any dome in the scene, rig or not
+        a = m.addAction("Apply on selected light", lambda: self.on_apply_to_selection(h))
+        a.setEnabled(any(builder._dome_kind(n) for n in rt.selection))
+        a.setToolTip("Puts this HDRI on the selected dome lights (V-Ray, Arnold, or any light with a texture)")
+        m.addAction("Copy path", lambda: (QtWidgets.QApplication.clipboard().setText(os.path.normpath(h.path)),
+                                          self._status("Path copied: %s" % h.path)))
+        m.addSeparator()
         m.addAction("Show in folder", lambda: self._reveal(h.path))
         m.exec(self.grid.viewport().mapToGlobal(pos))
+
+    def on_apply_to_selection(self, h):
+        try:
+            done, skipped = builder.apply_hdri_to_nodes(h.path)
+        except Exception as exc:  # noqa: BLE001
+            self._status("Apply on selected light: %s" % exc, C_ERR)
+            return
+        if done:
+            msg = "%s on %s" % (h.label, ", ".join(done))
+            if skipped:
+                msg += "   ·   not a dome light: %s" % ", ".join(skipped)
+            self._status(msg, C_OK)
+        else:
+            self._status("Select a dome light (V-Ray Dome, Arnold Skydome…)", C_WARN)
 
     def _reveal(self, path):
         try:

@@ -1,5 +1,11 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.9.2
+- **Lookdev Rig: the library works for any HDRI of the scene**, not only the rig's
+  - **Drag a thumbnail** out of the library: it goes as its file, like dragging the .exr / .hdr from a folder — onto a Bitmap / VRayBitmap map slot of the Material Editor, a path field, Explorer…
+  - **Right-click › Apply on selected light:** puts the HDRI on the selected dome lights (V-Ray Dome, Arnold Skydome, or any light with a texture slot). A dome that already has a texture keeps it and only its file changes (mapping, rotation and the rest stay); one without a texture gets a spherical map with it. One Undo record ("Apply HDRI"); what was not a dome light is listed in the status bar
+  - **Right-click › Copy path**
+
 ## v2.9.1
 - **Bake Camera faster (STM_BakeAlembic v2.1.0):** the viewport backgrounds are turned off while it reads the camera (an animated plate loads one image per frame) and come back after — on by default
   - New **Fast: no viewport redraw** option (off by default, remembered): much faster; check the FOV of a zooming Alembic camera after, and bake again without it if the FOV comes out constant

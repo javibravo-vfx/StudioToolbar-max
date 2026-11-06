@@ -1,5 +1,10 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.9.1
+- **Bake Camera faster (STM_BakeAlembic v2.1.0):** the viewport backgrounds are turned off while it reads the camera (an animated plate loads one image per frame) and come back after — on by default
+  - New **Fast: no viewport redraw** option (off by default, remembered): much faster; check the FOV of a zooming Alembic camera after, and bake again without it if the FOV comes out constant
+  - The window shows how long the bake took
+
 ## v2.9.0
 - **Bake Camera, rewritten (STM_BakeAlembic v2.0.0):** bakes any camera — an Alembic camera from Nuke, a camera with constraints, linked or on a path, a target camera — into a native editable camera with a key per frame, without the intermediate "linked camera" step
   - Fix: it baked a single frame and missed the FOV and the animation of Alembic cameras. Alembic objects only update at the scene time, so it now moves the time slider frame by frame (like a manual bake) and reads the FOV from the viewport looking through the source — works for any camera type, also Alembic ones whose parameters can't be seen

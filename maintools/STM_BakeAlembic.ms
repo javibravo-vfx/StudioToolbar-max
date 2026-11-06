@@ -1,6 +1,6 @@
 /*
 Script Name:    STM_BakeAlembic.ms
-Version:        v2.0.0
+Version:        v2.1.0
 Description:
     Bake Camera: copies any camera (an Alembic camera from Nuke, a camera with constraints,
     linked, on a path, a target camera...) into a native, editable camera with one key per frame:
@@ -13,6 +13,9 @@ Description:
     "at time" context, so the script moves the time slider frame by frame, like a manual bake.
     The FOV is read from the viewport looking through the source camera (getViewFOV), which works
     for any camera type, also the Alembic ones whose parameters can't be seen or edited.
+    Speed: most of the time goes into redrawing the viewports. While it reads, the viewport
+    backgrounds are turned off (an animated plate loads one image per frame) and come back after;
+    "Fast" doesn't redraw at all (to try: check the FOV of a zooming camera after).
 */
 
 try (destroyDialog STM_BakeCam_ro) catch ()
@@ -88,8 +91,34 @@ fn STM_BakeCam_create tid filmW =
     cam
 )
 
+-- the viewport backgrounds (image / sequence) off while it reads; returns what to put back
+fn STM_BakeCam_bkgOff =
+(
+    local keep = #()
+    local act = viewport.activeViewport
+    for i = 1 to viewport.numViews do
+    (
+        viewport.activeViewport = i
+        local isOn = try (viewport.DispBkgImage) catch (false)
+        append keep isOn
+        if isOn do try (viewport.DispBkgImage = false) catch ()
+    )
+    viewport.activeViewport = act
+    keep
+)
+fn STM_BakeCam_bkgRestore keep =
+(
+    local act = viewport.activeViewport
+    for i = 1 to keep.count where keep[i] and i <= viewport.numViews do
+    (
+        viewport.activeViewport = i
+        try (viewport.DispBkgImage = true) catch ()
+    )
+    viewport.activeViewport = act
+)
+
 -- samples the source frame by frame: #(#(time, transform, fov), ...); undefined if cancelled
-fn STM_BakeCam_sample src s e noScale =
+fn STM_BakeCam_sample src s e noScale noBkg fast =
 (
     local samples = #()
     local keepTime = sliderTime
@@ -99,14 +128,16 @@ fn STM_BakeCam_sample src s e noScale =
     local vpTM = viewport.getTM()
     local vpFov = getViewFOV()
     local cancelled = false
+    local bkg = if noBkg then STM_BakeCam_bkgOff() else #()
     viewport.setCamera src
+    if fast do disableSceneRedraw()
     progressStart "Bake Camera: reading the source"
     try
     (
         for t = s to e while not cancelled do
         (
             sliderTime = t
-            redrawViews()
+            if not fast do redrawViews()
             local tm = src.transform
             if noScale do tm = STM_BakeCam_noScale tm
             append samples #(t, tm, getViewFOV())
@@ -115,6 +146,7 @@ fn STM_BakeCam_sample src s e noScale =
     )
     catch (format "STM Bake Camera: %\n" (getCurrentException()))
     progressEnd()
+    if fast do enableSceneRedraw()
     sliderTime = keepTime
     if vpCam != undefined then viewport.setCamera vpCam
     else
@@ -122,13 +154,14 @@ fn STM_BakeCam_sample src s e noScale =
         try (viewport.setType vpType) catch ()
         if vpType == #view_persp_user do (try (viewport.setTM vpTM; viewport.SetFOV vpFov) catch ())
     )
+    STM_BakeCam_bkgRestore bkg
     redrawViews()
     if cancelled then undefined else samples
 )
 
-fn STM_BakeCam_bake src tid filmW s e noScale =
+fn STM_BakeCam_bake src tid filmW s e noScale noBkg fast =
 (
-    local samples = STM_BakeCam_sample src s e noScale
+    local samples = STM_BakeCam_sample src s e noScale noBkg fast
     if samples == undefined or samples.count == 0 do return undefined
     local fovAnim = false
     for x in samples while not fovAnim where abs (x[3] - samples[1][3]) > 0.0001 do fovAnim = true
@@ -167,6 +200,10 @@ rollout STM_BakeCam_ro "STM Bake Camera" width:280
     )
     checkbox chkScale "Remove scale from the transform" checked:true \
         tooltip:"An Alembic from Nuke can bring a scale on the camera node; the baked camera keeps position and rotation only"
+    checkbox chkBkg "Viewport backgrounds off while reading" checked:true \
+        tooltip:"An animated background loads one image per frame and makes it slow; they come back after"
+    checkbox chkFast "Fast: no viewport redraw" checked:false \
+        tooltip:"Much faster. Check the FOV of a zooming camera after: if it comes out constant, bake again without Fast"
     button btnBake "BAKE" width:256 height:30
     label lblInfo "" align:#left width:256 height:30
 
@@ -200,6 +237,8 @@ rollout STM_BakeCam_ro "STM Bake Camera" width:280
         spFilm.value = getRendApertureWidth()
         spS.value = animationRange.start.frame as integer
         spE.value = animationRange.end.frame as integer
+        chkBkg.checked = (getINISetting STM_BakeCam_ini "Bake" "NoBkg") != "false"
+        chkFast.checked = (getINISetting STM_BakeCam_ini "Bake" "Fast") == "true"
         updateType()
         updateSource()
         callbacks.addScript #selectionSetChanged "try (STM_BakeCam_ro.updateSource()) catch ()" id:#STM_BakeCam
@@ -210,6 +249,8 @@ rollout STM_BakeCam_ro "STM Bake Camera" width:280
         updateType()
         setINISetting STM_BakeCam_ini "Bake" "Type" (typeIds[i] as string)
     )
+    on chkBkg changed v do setINISetting STM_BakeCam_ini "Bake" "NoBkg" (v as string)
+    on chkFast changed v do setINISetting STM_BakeCam_ini "Bake" "Fast" (v as string)
     on btnRange pressed do
     (
         spS.value = animationRange.start.frame as integer
@@ -222,11 +263,12 @@ rollout STM_BakeCam_ro "STM Bake Camera" width:280
         else if spE.value < spS.value then messageBox "End is before Start" title:"Bake Camera"
         else
         (
-            local r = STM_BakeCam_bake src typeIds[ddType.selection] spFilm.value spS.value spE.value chkScale.checked
+            local t0 = timeStamp()
+            local r = STM_BakeCam_bake src typeIds[ddType.selection] spFilm.value spS.value spE.value chkScale.checked chkBkg.checked chkFast.checked
             if r == undefined then lblInfo.text = "Cancelled: nothing was created"
             else
             (
-                lblInfo.text = r[1].name + ": " + (r[3] as string) + " frames, transform" + (if r[2] then " + FOV keys" else " keys (FOV constant)")
+                lblInfo.text = r[1].name + ": " + (r[3] as string) + " frames, transform" + (if r[2] then " + FOV keys" else " keys (FOV constant)") + " - " + (((timeStamp() - t0) / 100) / 10.0) as string + " s"
                 format "STM Bake Camera: % from % (%), % frames\n" r[1].name src.name (classOf src) r[3]
                 select r[1]
             )

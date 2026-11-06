@@ -348,6 +348,17 @@ class _HdriGrid(QtWidgets.QListWidget):
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
         self.setDefaultDropAction(QtCore.Qt.CopyAction)
 
+    # setMovement(Static) and setViewMode() turn dragging off in a QListView: it comes back on after them
+    def setMovement(self, movement):
+        super().setMovement(movement)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
+
+    def setViewMode(self, mode):
+        super().setViewMode(mode)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
+
     def mimeTypes(self):
         return ["text/uri-list", "text/plain"]
 
@@ -487,13 +498,16 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self.grid.setViewMode(QtWidgets.QListView.IconMode)
         self.grid.setResizeMode(QtWidgets.QListView.Adjust)
         self.grid.setMovement(QtWidgets.QListView.Static)
+        # Static turns dragging off in a QListView: on again, only to drag the files out (DragOnly)
+        self.grid.setDragEnabled(True)
+        self.grid.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
         self.grid.setUniformItemSizes(True)
         self.grid.setSpacing(6)
         self.grid.setWordWrap(True)
         self.grid.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.grid.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.grid.currentItemChanged.connect(self.on_hdri_changed)
-        self.grid.itemDoubleClicked.connect(lambda *_: self.on_build())
+        self.grid.itemDoubleClicked.connect(self._on_double_click)
         self.grid.viewport().installEventFilter(self)
         self.grid.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.grid.customContextMenuRequested.connect(self._grid_menu)
@@ -572,7 +586,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
         brow.setSpacing(6)
         self.b_build = QtWidgets.QPushButton("Build / update rig")
         self.b_build.setObjectName("primary")
-        self.b_build.setToolTip("Builds the rig around the selection (double-click an HDRI does the same)")
+        self.b_build.setToolTip("Builds the rig around the selection (double-click an HDRI does the same when no dome light is selected)")
         self.b_build.clicked.connect(self.on_build)
         b_remove = QtWidgets.QPushButton("Delete rig")
         b_remove.setToolTip("Deletes the rig and its layer; restores materials and scene background")
@@ -872,8 +886,9 @@ class LookdevRigDialog(QtWidgets.QDialog):
                 it = QtWidgets.QListWidgetItem(QtGui.QIcon(pm), h.label)
                 it.setData(QtCore.Qt.UserRole, h.name)
                 it.setData(_HdriGrid.PATH_ROLE, h.path)
-                it.setToolTip("%s\n%s\n\nDrag it onto a Bitmap / VRayBitmap map slot, or right-click › "
-                              "Apply on selected light" % (h.label, h.path))
+                it.setToolTip("%s\n%s\n\nDouble-click: on the selected dome light, or builds the rig if none is selected\n"
+                              "Drag it onto a Bitmap / VRayBitmap map slot · right-click › Apply on selected light"
+                              % (h.label, h.path))
                 it.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
                 self.grid.addItem(it)
             if not self._hdris:
@@ -1125,6 +1140,18 @@ class LookdevRigDialog(QtWidgets.QDialog):
         m.addSeparator()
         m.addAction("Show in folder", lambda: self._reveal(h.path))
         m.exec(self.grid.viewport().mapToGlobal(pos))
+
+    def _selected_domes(self):
+        """Dome lights of the scene in the selection (not the rig's: that one follows the rig's HDRI)."""
+        return [n for n in rt.selection if builder._dome_kind(n) and not builder._is_rig(n)]
+
+    def _on_double_click(self, *_):
+        # with a dome light of the scene selected, double-click puts the HDRI on it; otherwise it builds the rig
+        h = self._current_hdri()
+        if h is not None and self._selected_domes():
+            self.on_apply_to_selection(h)
+        else:
+            self.on_build()
 
     def on_apply_to_selection(self, h):
         try:

@@ -1,5 +1,9 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.9.3
+- **Lookdev Rig: double-click a thumbnail with a dome light selected puts that HDRI on the light** (the same as right-click › Apply on selected light). With no dome light of the scene selected, double-click builds the rig as before
+- **Dragging a thumbnail out of the library works:** the grid turned dragging off when it was set to icons, so the drag never started
+
 ## v2.9.2
 - **Lookdev Rig: the library works for any HDRI of the scene**, not only the rig's
   - **Drag a thumbnail** out of the library: it goes as its file, like dragging the .exr / .hdr from a folder — onto a Bitmap / VRayBitmap map slot of the Material Editor, a path field, Explorer…

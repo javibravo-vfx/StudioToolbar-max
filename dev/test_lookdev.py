@@ -586,6 +586,111 @@ for s in (1.0, 100.0):
     sizes.append(it["radius"] / (-it["pos"][2] * math.tan(fr.vfov / 2)))
 check("core: refs keep screen size at any scale", abs(sizes[0] - sizes[1]) < 1e-9)
 
+# 10. project hdri folder: <folder of the .max>\hdri
+shot = os.path.join(tmp, "VFX-MOR", "101", "010", "3D", "8_lighting", "1_projects")
+os.makedirs(shot)
+check("project: none when the scene is unsaved / folder missing",
+      core.project_hdri_dir("") is None and core.project_hdri_dir(shot) is None)
+os.makedirs(os.path.join(shot, "HDRI"))
+proj = core.project_hdri_dir(shot)
+check("project: found without case", proj and os.path.basename(proj) == "HDRI", proj)
+shutil.rmtree(proj)
+proj = core.project_hdri_dir(shot, create=True)
+check("project: create makes <scene>/hdri", proj == os.path.join(shot, "hdri") and os.path.isdir(proj))
+# from the studio library: sidecar + cached preview travel with it
+src = core.find_hdri("exterior_b", hdri_dir)
+c, done = core.copy_hdri(src, proj)
+check("copy: file + sidecar next to it", done and os.path.isfile(os.path.join(proj, "exterior_b.hdr"))
+      and c.rotation_offset == src.rotation_offset and c.intensity == src.intensity and c.root == proj and "sun" in c.meta.get("tags", []),
+      (done, c.rotation_offset, c.root, c.meta))
+check("copy: cached preview + blurred bg copied (no Refresh needed)",
+      c.thumb and c.thumb.startswith(core.library_cache_dir(proj)) and c.bg, (c.thumb, c.bg))
+c2, done2 = core.copy_hdri(src, proj)
+check("copy: same file again is skipped", not done2 and c2.path == c.path)
+c3, done3 = core.copy_hdri(c, proj)
+check("copy: an HDRI of the project itself is not copied", not done3 and c3.path == c.path)
+# from another folder (NAS): defaults saved in its cache follow; the source is untouched
+nas = core.find_hdri("exterior/day/field_4k", ext)
+core.save_sidecar(nas.path, {"rotation_offset_deg": 77}, root=ext)
+before_nas = sorted(os.path.relpath(os.path.join(d, f), ext) for d, _, fs in os.walk(ext) for f in fs)
+c4, _ = core.copy_hdri(nas, proj)
+check("copy: from a sub-folder goes to the top of hdri, with its saved defaults",
+      c4.path == os.path.join(proj, "field_4k.exr") and c4.rotation_offset == 77 and c4.thumb and c4.bg)
+check("copy: source folder untouched", sorted(
+    os.path.relpath(os.path.join(d, f), ext) for d, _, fs in os.walk(ext) for f in fs) == before_nas)
+open(os.path.join(ext, "studio", "field_4k.exr"), "wb").write(b"different")
+try:
+    core.copy_hdri(core.find_hdri("studio/field_4k", ext), proj)
+    check("copy: different file of the same name asks first", False)
+except FileExistsError:
+    check("copy: different file of the same name asks first", True)
+c5, done5 = core.copy_hdri(core.find_hdri("studio/field_4k", ext), proj, overwrite=True)
+check("copy: overwrite replaces it", done5 and open(c5.path, "rb").read() == b"different")
+check("project: listed as a library", sorted(h.name for h in core.list_hdris(proj)) == ["exterior_b", "field_4k"])
+
+# 11. dialog: project library in the dropdown, default, Copy to project
+try:
+    from PySide6 import QtWidgets as _QtW  # noqa: E402
+except ImportError:
+    _QtW = None
+    print("SKIP dialog checks (no PySide6)")
+if _QtW is not None:
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.environ["HOME"] = os.environ["USERPROFILE"] = tmp       # settings ini in the temp folder
+    app = _QtW.QApplication.instance() or _QtW.QApplication([])
+    rt.maxFilePath = ""
+    from studio_lookdev_max import ui  # noqa: E402
+    ui.SETTINGS_PATH = os.path.join(tmp, "lookdev_rig.ini")
+    ui.save_settings(library=ext, recent_libraries=json.dumps([ext]))   # last library picked: the NAS
+    proj2_scene = os.path.join(tmp, "VFX-MOR", "101", "020", "3D", "8_lighting", "1_projects")
+    os.makedirs(os.path.join(proj2_scene, "hdri"))
+    rt.maxFilePath = shot + os.sep
+    dlg = ui.LookdevRigDialog()
+    cb = dlg.cmb_library
+    labels = [cb.itemText(i) for i in range(cb.count())]
+    check("dialog: Project · hdri first in the dropdown and current",
+          labels[0] == "Project · hdri" and cb.currentIndex() == 0 and ui._same_path(dlg._root, proj), labels)
+    check("dialog: studio library and the NAS still there",
+          "Studio library" in labels and any(cb.itemData(i) == ext for i in range(cb.count())),
+          (labels, dlg._recent))
+    check("dialog: lists the project's HDRIs", sorted(h.name for h in dlg._hdris) == ["exterior_b", "field_4k"])
+    dlg.set_library(ext)
+    check("dialog: picking another folder works", ui._same_path(dlg._root, ext) and len(dlg._hdris) > 2)
+    dlg.set_library(proj)
+    check("dialog: the project folder is not remembered as a library / recent",
+          ui.load_settings().get("library") == ext and not any(ui._same_path(p, proj) for p in dlg._recent))
+    rt.maxFilePath = proj2_scene + os.sep                    # another shot opened
+    dlg.refresh()
+    check("dialog: follows the open scene's hdri",
+          ui._same_path(dlg._root, os.path.join(proj2_scene, "hdri")) and not dlg._hdris)
+    rt.maxFilePath = ""                                      # unsaved scene: back to the chosen one
+    dlg.refresh()
+    check("dialog: no project → last library picked",
+          ui._same_path(dlg._root, ext) and cb.itemText(0) == "Studio library")
+    # copy from the NAS library into a third shot without hdri folder yet
+    shot3 = os.path.join(tmp, "VFX-MOR", "101", "030", "3D", "8_lighting", "1_projects")
+    os.makedirs(shot3)
+    rt.maxFilePath = shot3 + os.sep
+    dlg.refresh()
+    check("dialog: scene without hdri folder → no project entry", cb.itemText(0) == "Studio library")
+    h = next(x for x in dlg._hdris if x.name == "top")
+    dlg.on_copy_to_project(h)
+    check("dialog: Copy to project creates hdri and copies the file",
+          os.path.isfile(os.path.join(shot3, "hdri", "top.exr")) and cb.itemText(0) == "Project · hdri"
+          and ui._same_path(dlg._root, ext), dlg._history[-1:] if hasattr(dlg, "_history") else "")
+    rt.selection = [asset]
+    builder.build(h)
+    h2 = next(x for x in dlg._hdris if x.name == "exterior/night/street_8k")
+    builder.set_rotation(25)
+    dlg.on_copy_to_project(h2, use=True)
+    dome = rt.getNodeByName("LKD_dome")
+    check("dialog: Copy and use points the rig's dome at the copy, rotation kept",
+          dome.texmap.HDRIMapName == os.path.join(shot3, "hdri", "street_8k.hdr")
+          and abs(builder.hdri_state()["rotation"] - 25) < 1e-6, (dome.texmap.HDRIMapName,
+                                                                   builder.hdri_state()["rotation"]))
+    builder.remove_rig()
+    dlg.close()
+
 if not os.environ.get("LOOKDEV_TEST_KEEP"):
     shutil.rmtree(tmp, ignore_errors=True)
 print("\n%d failures" % len(fails), fails)

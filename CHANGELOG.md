@@ -1,5 +1,14 @@
 # Changelog — Studio Toolbar for 3ds Max
 
+## v2.9.5
+- **Lookdev Rig: the shot's own HDRIs.** When the open .max has an `hdri` folder next to it (made by the toolbar with the task folders), the library dropdown shows **Project · hdri** first and opens on it
+  - Follows the scene: open another shot and it switches to that shot's `hdri` when the window is opened or comes back to the front; with no `hdri` folder (or an unsaved scene) it goes back to the last library you picked
+  - The project folder is never kept as "last library" or in the recent folders, so a shot's folder does not stick to the next one
+- **Right-click › Copy to project hdri** (in any other library: Studio, the NAS…): copies the HDRI to `<folder of the .max>\hdri` (created if missing) with its sidecar, hand-made thumbnail, Arnold .tx, and the cached preview / blurred background / saved defaults, so it shows there at once without Refresh library. Same file already there → skipped; a different file of the same name → asks before replacing
+- **Right-click › Copy to project and use on the rig:** the same, and the rig's dome points at the copy (rotation and EV stay)
+- Needs the updated `shared` (`core.project_hdri_dir`, `core.copy_hdri`), now in the StudioToolbar-shared repo
+- `dev/test_lookdev.py`: project folder, copy and dialog checks (107)
+
 ## v2.9.4
 - **Lookdev Rig: dragging a thumbnail replaces the path of the map** instead of adding it after the one it had: on Windows the drag is now the same one Explorer makes for the file (the drag of Qt also carried the path as text, and the path field pasted it after its own)
 

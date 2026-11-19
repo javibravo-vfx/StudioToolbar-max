@@ -176,6 +176,23 @@ def _short_path(p, keep=2):
     return p if len(parts) <= keep + 1 else os.path.join(parts[0] + os.sep, "…", *parts[-keep:])
 
 
+def _same_path(a, b):
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+def _scene_dir():
+    """Folder of the open .max ("" when the scene was never saved)."""
+    try:
+        return str(rt.maxFilePath or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _project_hdri_dir(create=False):
+    """<folder of the .max>\\hdri (made by the Studio Toolbar with the task folders), or None."""
+    return core.project_hdri_dir(_scene_dir(), create=create)
+
+
 def _max_main_window():
     try:
         import qtmax
@@ -455,9 +472,8 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self._history = []
         self._thumb = THUMB_DEFAULT
         self._settings = load_settings()
-        self._root = self._settings.get("library") or core.HDRI_DIR
-        if not os.path.isdir(self._root):
-            self._root = core.HDRI_DIR
+        self._project = _project_hdri_dir()
+        self._root = self._project or self._chosen_library()
         try:
             self._recent = [p for p in json.loads(self._settings.get("recent_libraries", "[]"))
                             if isinstance(p, str)]
@@ -470,6 +486,42 @@ class LookdevRigDialog(QtWidgets.QDialog):
         self._geom_timer.timeout.connect(self._save_layout)
         self._restore_settings()
         self.refresh()
+
+    # -- project hdri folder -------------------------------------------------
+
+    def _chosen_library(self):
+        """Last library picked by hand (never a project folder), else the studio one."""
+        lib = self._settings.get("library") or core.HDRI_DIR
+        return lib if os.path.isdir(lib) else core.HDRI_DIR
+
+    def _is_project(self, folder):
+        return bool(self._project) and _same_path(folder, self._project)
+
+    def _sync_project(self):
+        """
+        Another scene was opened (or saved / its hdri folder created): the project library
+        follows it, and becomes the current one when it exists.
+        Returns True when the current library changed.
+        """
+        proj = _project_hdri_dir()
+        if _same_path(proj or "", self._project or ""):
+            return False
+        old, self._project = self._project, proj
+        before = self._root
+        if proj:
+            self._root = proj
+        elif old and _same_path(self._root, old):
+            self._root = self._chosen_library()
+        if not os.path.isdir(self._root):
+            self._root = core.HDRI_DIR
+        return not _same_path(before, self._root)
+
+    def changeEvent(self, e):
+        super(LookdevRigDialog, self).changeEvent(e)
+        if e.type() == QtCore.QEvent.ActivationChange and self.isActiveWindow() \
+                and not self._loading and self._sync_project():
+            self.refresh()
+            self._status("Library: project hdri  ·  %s" % self._root, C_OK)
 
     # -- UI -----------------------------------------------------------------
 
@@ -902,6 +954,7 @@ class LookdevRigDialog(QtWidgets.QDialog):
     # -- data ---------------------------------------------------------------
 
     def refresh(self):
+        self._sync_project()
         self._loading = True
         try:
             try:
@@ -1196,9 +1249,67 @@ class LookdevRigDialog(QtWidgets.QDialog):
         a.setToolTip("Puts this HDRI on the selected dome lights (V-Ray, Arnold, or any light with a texture)")
         m.addAction("Copy path", lambda: (QtWidgets.QApplication.clipboard().setText(os.path.normpath(h.path)),
                                           self._status("Path copied: %s" % h.path)))
+        if not self._is_project(self._root):
+            # keep the HDRI with the shot: copy it into <folder of the .max>\hdri
+            m.addSeparator()
+            saved = bool(_scene_dir())
+            dest = self._project or (os.path.join(_scene_dir(), core.PROJECT_HDRI_DIRNAME)
+                                     if saved else "")
+            tip = ("Copies it to %s" % dest) if saved else "Save the scene first: the copy goes next to the .max"
+            a = m.addAction("Copy to project hdri", lambda: self.on_copy_to_project(h))
+            a.setEnabled(saved)
+            a.setToolTip(tip)
+            a = m.addAction("Copy to project and use on the rig",
+                            lambda: self.on_copy_to_project(h, use=True))
+            a.setEnabled(saved and builder.hdri_state() is not None)
+            a.setToolTip(tip + "\nand points the rig's dome at the copy (rotation and EV stay)")
         m.addSeparator()
         m.addAction("Show in folder", lambda: self._reveal(h.path))
         m.exec(self.grid.viewport().mapToGlobal(pos))
+
+    def on_copy_to_project(self, h, use=False):
+        """Copies the HDRI (+ preview, sidecar, .tx) into the shot's hdri folder."""
+        try:
+            dest = self._project or _project_hdri_dir(create=True)
+        except OSError as exc:
+            self._status("Copy to project: %s" % exc, C_ERR)
+            return
+        if not dest:
+            self._status("Save the scene first: the copy goes next to the .max", C_WARN)
+            return
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            try:
+                copy, done = core.copy_hdri(h, dest)
+            except FileExistsError as exc:
+                QtWidgets.QApplication.restoreOverrideCursor()
+                r = QtWidgets.QMessageBox.question(
+                    self, "Copy to project",
+                    "There is already a different %s in\n%s\n\nReplace it?"
+                    % (os.path.basename(str(exc)), dest))
+                QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+                if r != QtWidgets.QMessageBox.Yes:
+                    self._status("Copy to project: cancelled", C_WARN)
+                    return
+                copy, done = core.copy_hdri(h, dest, overwrite=True)
+        except Exception as exc:  # noqa: BLE001
+            self._status("Copy to project: %s" % exc, C_ERR)
+            return
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        self._project = dest
+        self._fill_library_combo()
+        msg = ("%s copied to project hdri" if done else "%s is already in project hdri") % h.label
+        if use:
+            try:
+                builder.set_hdri(copy, keep_adjustments=True)
+                rt.redrawViews()
+                self._sync_live()
+                msg += "  ·  rig uses the copy"
+            except Exception as exc:  # noqa: BLE001
+                self._status("%s  ·  rig: %s" % (msg, exc), C_ERR)
+                return
+        self._status("%s  ·  %s" % (msg, copy.path), C_OK)
 
     def _selected_domes(self):
         """Dome lights of the scene in the selection (not the rig's: that one follows the rig's HDRI)."""
@@ -1416,10 +1527,14 @@ class LookdevRigDialog(QtWidgets.QDialog):
         cb = self.cmb_library
         cb.blockSignals(True)
         cb.clear()
+        if self._project:
+            cb.addItem("Project · hdri", self._project)
+            cb.setItemData(0, "HDRIs of this shot (next to the .max):\n%s" % self._project,
+                           QtCore.Qt.ToolTipRole)
         cb.addItem("Studio library", core.HDRI_DIR)
-        cb.setItemData(0, core.HDRI_DIR, QtCore.Qt.ToolTipRole)
+        cb.setItemData(cb.count() - 1, core.HDRI_DIR, QtCore.Qt.ToolTipRole)
         for p in self._recent:
-            if not core.is_default_library(p):
+            if not core.is_default_library(p) and not self._is_project(p):
                 cb.addItem(_short_path(p), p)
                 cb.setItemData(cb.count() - 1, p, QtCore.Qt.ToolTipRole)
         cb.insertSeparator(cb.count())
@@ -1428,8 +1543,8 @@ class LookdevRigDialog(QtWidgets.QDialog):
             cb.addItem("Clear recent folders", "__clear__")
         i = cb.findData(self._root)
         if i < 0:
-            cb.insertItem(1, _short_path(self._root), self._root)
-            i = 1
+            i = 2 if self._project else 1
+            cb.insertItem(i, _short_path(self._root), self._root)
         cb.setCurrentIndex(i)
         cb.blockSignals(False)
 
@@ -1458,11 +1573,16 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self._status("Folder not found: %s" % folder, C_ERR)
             return
         self._root = folder
-        if not core.is_default_library(folder):
-            self._recent = [folder] + [p for p in self._recent
-                                       if os.path.normcase(p) != os.path.normcase(folder)]
-            self._recent = self._recent[:8]
-        save_settings(library=folder, recent_libraries=json.dumps(self._recent), filter=FILTER_ALL)
+        if self._is_project(folder):
+            save_settings(filter=FILTER_ALL)         # the shot's folder is never remembered
+        else:
+            if not core.is_default_library(folder):
+                self._recent = [folder] + [p for p in self._recent
+                                           if os.path.normcase(p) != os.path.normcase(folder)]
+                self._recent = self._recent[:8]
+            self._settings["library"] = folder
+            save_settings(library=folder, recent_libraries=json.dumps(self._recent),
+                          filter=FILTER_ALL)
         self.sidebar.setCurrentRow(0)
         self.search.clear()
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
@@ -1470,7 +1590,8 @@ class LookdevRigDialog(QtWidgets.QDialog):
             self.refresh()
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
-        name = "Studio library" if core.is_default_library(folder) else folder
+        name = "Studio library" if core.is_default_library(folder) else \
+            "project hdri  ·  %s" % folder if self._is_project(folder) else folder
         self._status("Library: %s  ·  %d HDRIs" % (name, len(self._hdris)), C_OK)
 
     def on_build(self):

@@ -106,6 +106,10 @@ T:\.studio-toolbar\shared\
 
 If the shared folder is missing, the Lookdev button says so. Use `STUDIO_TOOLBAR_ROOT` to point elsewhere.
 
+The shared folder is versioned in [StudioToolbar-shared](https://github.com/javibravo-vfx/StudioToolbar-shared) (code, presets and charts; HDRIs and caches stay only on the studio drive).
+
+**Project HDRIs:** when the open .max has an `hdri` folder next to it (e.g. `…\8_lighting\1_projects\hdri`, made with the task folders), the Lookdev Rig lists it first as **Project · hdri** and opens on it. From any other library, right-click a thumbnail › **Copy to project hdri** (or **Copy to project and use on the rig**) to keep the HDRI with the shot.
+
 ---
 
 ## Pipeline Config
